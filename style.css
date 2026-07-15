@@ -255,7 +255,7 @@ select:focus, input:focus, textarea:focus{border-color:var(--text-faint);}
   border-bottom:1px solid var(--border);cursor:pointer;transition:background .12s;
 }
 .thread-item:hover{background:var(--surface-2);}
-.thread-item.active{background:var(--amber-soft);}
+.thread-item.active{background:var(--surface);}
 .thread-item .t-name{font-weight:600;font-size:13.5px;}
 .thread-item .t-preview{font-size:12px;color:var(--text-faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .thread-item .t-time{font-size:10.5px;color:var(--text-faint);font-family:'IBM Plex Mono',monospace;}
