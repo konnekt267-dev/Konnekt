@@ -14,6 +14,7 @@
     <nav>
       <button class="nav-btn active" data-view="board" onclick="setView('board')">Board</button>
       <button class="nav-btn" data-view="post" onclick="setView('post')">Post a signal</button>
+      <button class="nav-btn" data-view="messages" onclick="setView('messages')">Messages<span class="nav-badge" id="threadBadge" style="display:none;"></span></button>
       <span class="live-count"><span class="pulse"></span><span id="liveCount">0</span> live</span>
     </nav>
     <div class="account-area" id="accountArea">
@@ -121,6 +122,24 @@
     </div>
   </div>
 
+  <div class="messages-panel" id="messagesPanel">
+    <div id="messagesSignedOut" class="signed-out-notice" style="display:none;">
+      <strong style="display:block;font-family:'Space Grotesk',sans-serif;font-size:18px;margin-bottom:4px;">Sign in to see your messages</strong>
+      <p>Message threads are tied to your account.</p>
+      <button class="btn btn-amber" onclick="openAuthModal('signup')">Create an account</button>
+    </div>
+
+    <div id="messagesSignedIn" class="messages-layout">
+      <div class="thread-list" id="threadList"></div>
+      <div class="thread-view" id="threadView">
+        <div class="empty-state">
+          <strong>No conversation selected</strong>
+          Pick a thread on the left, or message someone from a listing on the board.
+        </div>
+      </div>
+    </div>
+  </div>
+
   <footer>
     <span>Konnekt — a public board. Every listing here is visible to everyone who opens this page.</span>
     <span class="mono" id="totalCount">0 signals total</span>
@@ -156,6 +175,17 @@
       <div class="modal-error" id="authError"></div>
       <p class="modal-note" id="authNote"></p>
     </form>
+  </div>
+</div>
+
+<!-- Profile modal -->
+<div class="modal-overlay" id="profileOverlay">
+  <div class="modal modal-wide">
+    <div class="modal-head">
+      <h3 id="profileModalTitle">Profile</h3>
+      <button class="modal-close" onclick="closeProfileModal()">&times;</button>
+    </div>
+    <div id="profileModalBody"></div>
   </div>
 </div>
 
