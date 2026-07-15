@@ -76,7 +76,7 @@ nav{display:flex;gap:6px;align-items:center;flex-wrap:wrap;}
 .btn:active{transform:scale(.97);}
 .btn:disabled{opacity:.6;cursor:default;}
 .btn-amber{background:var(--amber);color:#171208;}
-.btn-amber:hover{background:#4fd8e8;}
+.btn-amber:hover{background:#9dff8c;}
 .btn-cyan{background:var(--cyan);color:#071a1c;}
 .btn-cyan:hover{background:#68e2ef;}
 .btn-ghost{background:transparent;border-color:var(--border);color:var(--text);}
