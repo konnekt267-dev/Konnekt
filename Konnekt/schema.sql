@@ -1,5 +1,3 @@
--- Konnekt schema
--- Run this in your Supabase project's SQL editor (Database > SQL Editor > New query).
 
 create extension if not exists "pgcrypto";
 
