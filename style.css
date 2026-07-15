@@ -9,8 +9,8 @@
   --text-muted:#8792a8;
   --text-faint:#5b6478;
   --amber:#8cff78;
-  --amber-soft:rgba(162, 255, 145);
-  --amber-dark:#6cf754; 
+  --amber-soft:rgba(162, 255, 145, .14);
+  --amber-dark:#61de4b; 
   --cyan:#4fd8e8;
   --cyan-soft:rgba(79,216,232,.14);
   --danger:#e8615f;
