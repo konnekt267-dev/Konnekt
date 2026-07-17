@@ -231,8 +231,8 @@ select:focus, input:focus, textarea:focus{border-color:var(--text-faint);}
 
 .checkbox-row{display:flex;align-items:center;gap:10px;font-size:13.5px;color:var(--text-muted);cursor:pointer;flex-direction:row;}
 .checkbox-row input[type=checkbox]{width:16px;height:16px;accent-color:var(--cyan);flex-shrink:0;cursor:pointer;}
-.badge.virtual{background:var(--cyan-soft);color:var(--cyan);}
-.badge.verified{background:var(--success-soft);color:var(--success);}
+.badge.virtual{background:var(--success-soft);color:var(--success);}
+.badge.verified{background:var(--cyan-soft);color:var(--cyan);}
 
 .signed-out-notice{
   border:1px dashed var(--border);border-radius:var(--radius);padding:32px 24px;text-align:center;
