@@ -61,6 +61,7 @@
         <button id="filterSponsorBtn" class="type-sponsor active" onclick="setBoardType('sponsor')">Sponsors</button>
       </div>
       <select id="categoryFilter" onchange="renderBoard()"></select>
+      <button class="saved-filter-btn" id="savedFilterBtn" onclick="toggleSavedOnly()">☆ Saved</button>
       <input type="text" id="searchFilter" placeholder="Search by name or keyword…" oninput="renderBoard()">
     </div>
 
@@ -211,6 +212,18 @@
     <span>Konnekt — a public board. Every listing here is visible to everyone who opens this page.</span>
     <span class="mono" id="totalCount">0 signals total</span>
   </footer>
+</div>
+
+
+<!-- Notifications -->
+<div class="modal-overlay" id="notificationsOverlay" onclick="if(event.target===this)closeNotifications()">
+  <div class="modal notifications-modal">
+    <div class="modal-head">
+      <h3>Notifications</h3>
+      <div class="notification-head-actions"><button class="link-btn" onclick="markAllNotificationsRead()">Mark all read</button><button class="modal-close" onclick="closeNotifications()">✕</button></div>
+    </div>
+    <div id="notificationsList" class="notifications-list"></div>
+  </div>
 </div>
 
 <!-- Sign-in modal -->
