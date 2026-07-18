@@ -917,6 +917,56 @@ async function deleteAccount(){
   }
 }
 
+// ---------- viral sharing / deep links ----------
+function signalUrl(id){
+  const url = new URL(window.location.href);
+  url.search = '';
+  url.hash = '';
+  url.searchParams.set('signal', id);
+  return url.toString();
+}
+
+async function shareSignal(id, event){
+  if(event) event.stopPropagation();
+  const l = listings.find(x => x.id === id);
+  if(!l) return;
+
+  const url = signalUrl(id);
+  const text = l.type === 'team'
+    ? `Help ${l.name} find the right sponsor on Konnekt — ${l.tagline}`
+    : `${l.name} is looking to support a great project on Konnekt — ${l.tagline}`;
+
+  try{
+    if(navigator.share){
+      await navigator.share({ title: `${l.name} · Konnekt`, text, url });
+      showToast('Signal shared — every share helps the network grow.');
+      return;
+    }
+    await navigator.clipboard.writeText(`${text}\n${url}`);
+    showToast('Share link copied.');
+  }catch(err){
+    if(err?.name === 'AbortError') return;
+    try{
+      const ta = document.createElement('textarea');
+      ta.value = `${text}\n${url}`;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+      showToast('Share link copied.');
+    }catch(_){
+      window.prompt('Copy this signal link:', url);
+    }
+  }
+}
+
+function openSharedSignalFromUrl(){
+  const id = new URLSearchParams(window.location.search).get('signal');
+  if(id && listings.some(l => l.id === id)) openListingDetail(id, false);
+}
+
 // ---------- listings ----------
 async function loadListings(){
   const { data, error } = await sb.from('listings').select('*').order('created_at', { ascending: false });
@@ -1005,6 +1055,7 @@ function renderBoard(){
         <div class="card-side-actions">
           ${!isOwner ? `<button class="btn-connect" onclick="messageFromListing('${l.user_id}','${l.id}')">Connect</button>` : ''}
           ${canProposeDeal ? `<button class="btn-offer" onclick="openProposeDeal('${l.id}')">Make an offer</button>` : ''}
+          <button class="btn-share" onclick="shareSignal('${l.id}', event)" title="Share this signal">↗ Share</button>
         </div>
         ${isOwner ? `<button class="btn btn-ghost btn-small" onclick="openEditListing('${l.id}')">Edit</button>` : ''}
         ${isOwner ? `<button class="del-btn" onclick="deleteListing('${l.id}')">Remove</button>` : ''}
@@ -1075,7 +1126,7 @@ async function submitListing(e){
   initTagPicker('fTags', []);
   document.getElementById('cancelEditBtn').style.display = 'none';
   populateCategorySelects();
-  showToast(isEditing ? "Listing updated." : "You're live on the board.");
+  showToast(isEditing ? "Listing updated." : "You're live — share your signal to reach people faster.");
   setView('board');
   setBoardType(postType === 'team' ? 'team' : 'sponsor');
 }
@@ -1124,7 +1175,7 @@ async function deleteListing(id){
 }
 
 // ---------- listing detail modal ----------
-function openListingDetail(id){
+function openListingDetail(id, updateUrl = true){
   const l = listings.find(x => x.id === id);
   if(!l) return;
   const poster = profileCache[l.user_id];
@@ -1154,13 +1205,24 @@ function openListingDetail(id){
       ${!isOwner ? `<button class="btn-connect" onclick="closeListingModal(); messageFromListing('${l.user_id}','${l.id}')">Connect</button>` : ''}
       ${canProposeDeal ? `<button class="btn-offer" onclick="openProposeDeal('${l.id}')">Make an offer</button>` : ''}
       ${isOwner ? `<button class="btn btn-ghost btn-small" onclick="openEditListing('${l.id}')">Edit</button>` : ''}
+      <button class="btn-share" onclick="shareSignal('${l.id}', event)">↗ Share signal</button>
       ${isOwner ? `<button class="del-btn" onclick="closeListingModal(); deleteListing('${l.id}')">Remove</button>` : ''}
     </div>
   `;
   document.getElementById('listingOverlay').classList.add('open');
+  if(updateUrl){
+    const url = new URL(window.location.href);
+    url.searchParams.set('signal', id);
+    history.pushState({ signal: id }, '', url);
+  }
 }
-function closeListingModal(){
+function closeListingModal(updateUrl = true){
   document.getElementById('listingOverlay').classList.remove('open');
+  if(updateUrl){
+    const url = new URL(window.location.href);
+    url.searchParams.delete('signal');
+    history.replaceState({}, '', url);
+  }
 }
 
 // ---------- profiles ----------
@@ -1757,26 +1819,15 @@ function dealsInFilter(){
   });
 }
 
-function paymentStatusLabel(d){
-  if(d.offer_kind === 'other') return 'No payment needed';
-  if(d.payment_status === 'paid') return 'Funded securely';
-  if(d.payment_status === 'processing') return 'Payment processing';
-  if(d.payment_status === 'refunded') return 'Refunded';
-  return 'Awaiting funding';
-}
-
 function dealProgressHtml(d){
   const accepted = ['accepted','completed'].includes(d.status);
-  const funded = d.offer_kind === 'other' || ['paid','processing'].includes(d.payment_status);
   const completed = d.status === 'completed';
   return `<div class="deal-progress">
     <div class="deal-step done"><span>✓</span><small>Terms agreed</small></div>
     <div class="deal-progress-line ${accepted?'done':''}"></div>
     <div class="deal-step ${accepted?'done':''}"><span>${accepted?'✓':'2'}</span><small>Kickoff</small></div>
-    <div class="deal-progress-line ${funded?'done':''}"></div>
-    <div class="deal-step ${funded?'done':''}"><span>${funded?'✓':'3'}</span><small>${d.offer_kind==='other'?'Support ready':'Funded'}</small></div>
     <div class="deal-progress-line ${completed?'done':''}"></div>
-    <div class="deal-step ${completed?'done':''}"><span>${completed?'✓':'4'}</span><small>Completed</small></div>
+    <div class="deal-step ${completed?'done':''}"><span>${completed?'✓':'3'}</span><small>Completed</small></div>
   </div>`;
 }
 
@@ -1831,13 +1882,10 @@ function dealCardHtml(d){
   } else if(d.status === 'pending' && iProposed){
     actionsHtml = `<button class="del-btn" onclick="cancelDeal('${d.id}')">Withdraw proposal</button>`;
   } else if(d.status === 'accepted'){
-    const paymentAction = isSponsor && d.offer_kind !== 'other' && d.payment_status !== 'paid'
-      ? `<button class="btn btn-amber btn-small" onclick="startSecurePayment('${d.id}')">Fund securely</button>`
-      : '';
     const deliveryAction = myConfirmed
       ? `<span class="deal-confirm-note">You confirmed ✓${theirConfirmed ? '' : ` — waiting on ${escapeHtml(counterparty?.display_name || 'them')}`}</span>`
       : `<button class="btn-connect" onclick="confirmDelivery('${d.id}')">Mark as delivered / received</button>`;
-    actionsHtml = `${paymentAction}<button class="btn btn-ghost btn-small" onclick="openDealConversation('${counterpartyId}','${d.listing_id || ''}')">Open conversation</button>${deliveryAction}`;
+    actionsHtml = `<button class="btn btn-ghost btn-small" onclick="openDealConversation('${counterpartyId}','${d.listing_id || ''}')">Open conversation</button>${deliveryAction}`;
   } else if(d.status === 'completed'){
     actionsHtml = alreadyReviewed
       ? `<span class="deal-confirm-note">Review submitted ✓</span>`
@@ -1858,7 +1906,6 @@ function dealCardHtml(d){
           <div class="deal-terms">${dealOfferSummaryHtml(d)}${d.duration ? `<span class="deal-term">⏱ ${escapeHtml(d.duration)}</span>` : ''}</div>
           ${d.deliverables ? `<div class="deal-deliverables"><strong>Deliverables:</strong> ${escapeHtml(d.deliverables)}</div>` : ''}
           ${d.note ? `<div class="deal-note">"${escapeHtml(d.note)}"</div>` : ''}
-          ${['accepted','completed'].includes(d.status) ? `<div class="payment-state ${d.payment_status === 'paid' ? 'paid' : ''}">🔒 ${paymentStatusLabel(d)}</div>` : ''}
         </div>
       </div>
       ${['accepted','completed'].includes(d.status) ? dealProgressHtml(d) : ''}
@@ -1997,7 +2044,7 @@ async function acceptDeal(id){
   if(!d) return;
   const now = new Date().toISOString();
   const { error } = await sb.from('deals').update({
-    status: 'accepted', kickoff_at: now, payment_status: d.offer_kind === 'other' ? 'not_required' : 'unpaid', updated_at: now
+    status: 'accepted', updated_at: now
   }).eq('id', id);
   if(error){ showToast("Couldn't accept — " + error.message); return; }
 
@@ -2021,18 +2068,6 @@ function openDealConversation(counterpartyId, listingId){
   openThread(counterpartyId);
 }
 
-async function startSecurePayment(dealId){
-  const d = deals.find(x => x.id === dealId);
-  if(!d || d.sponsor_id !== session.user.id){ showToast("Only the sponsor can fund this deal."); return; }
-  if(!d.amount || Number(d.amount) <= 0){ showToast("This deal doesn't have a payable amount."); return; }
-  showToast("Opening secure checkout…");
-  const { data, error } = await sb.functions.invoke('create-payment-session', { body: { dealId } });
-  if(error || !data?.url){
-    showToast(error?.message || data?.error || "Secure payments aren't configured yet.");
-    return;
-  }
-  window.location.href = data.url;
-}
 async function declineDeal(id){
   const { error } = await sb.from('deals').update({ status: 'declined', updated_at: new Date().toISOString() }).eq('id', id);
   if(error){ showToast("Couldn't decline — " + error.message); return; }
@@ -2173,16 +2208,12 @@ async function init(){
     await loadMyReviews();
   }
 
-  const paymentResult = new URLSearchParams(window.location.search).get('payment');
-  if(paymentResult === 'success'){
-    setView('deals');
-    showToast('Payment received — funding status will update securely.');
-    history.replaceState({}, '', window.location.pathname);
-  } else if(paymentResult === 'cancelled'){
-    setView('deals');
-    showToast('Payment cancelled — the deal is still active.');
-    history.replaceState({}, '', window.location.pathname);
-  }
+  openSharedSignalFromUrl();
+  window.addEventListener('popstate', () => {
+    const id = new URLSearchParams(window.location.search).get('signal');
+    if(id) openListingDetail(id, false);
+    else closeListingModal(false);
+  });
   subscribeMessagesRealtime();
   subscribeDealsRealtime();
 }
