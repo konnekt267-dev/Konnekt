@@ -166,3 +166,84 @@ create policy "Users can view their own match notifications" on public.match_not
 -- No insert/update policy needed here — the Edge Function writes with the
 -- service role key, which bypasses RLS entirely.
 
+
+
+-- 10) Community: expanded entity profiles, updates, follows, likes, and replies.
+alter table public.profiles
+  add column if not exists mission text,
+  add column if not exists seeking text,
+  add column if not exists achievements text;
+
+create table if not exists public.posts (
+  id uuid primary key default gen_random_uuid(),
+  author_id uuid not null references auth.users(id) on delete cascade,
+  body text not null check (char_length(body) between 1 and 800),
+  like_count integer not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+alter table public.posts enable row level security;
+drop policy if exists "Posts are publicly viewable" on public.posts;
+create policy "Posts are publicly viewable" on public.posts for select using (true);
+drop policy if exists "Users can create own posts" on public.posts;
+create policy "Users can create own posts" on public.posts for insert with check (auth.uid() = author_id);
+drop policy if exists "Users can update own posts" on public.posts;
+create policy "Users can update own posts" on public.posts for update using (auth.uid() = author_id);
+drop policy if exists "Users can delete own posts" on public.posts;
+create policy "Users can delete own posts" on public.posts for delete using (auth.uid() = author_id);
+
+create table if not exists public.follows (
+  follower_id uuid not null references auth.users(id) on delete cascade,
+  following_id uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (follower_id, following_id),
+  check (follower_id <> following_id)
+);
+alter table public.follows enable row level security;
+drop policy if exists "Follows are publicly viewable" on public.follows;
+create policy "Follows are publicly viewable" on public.follows for select using (true);
+drop policy if exists "Users manage own follows" on public.follows;
+create policy "Users manage own follows" on public.follows for insert with check (auth.uid() = follower_id);
+drop policy if exists "Users delete own follows" on public.follows;
+create policy "Users delete own follows" on public.follows for delete using (auth.uid() = follower_id);
+
+create table if not exists public.post_comments (
+  id uuid primary key default gen_random_uuid(),
+  post_id uuid not null references public.posts(id) on delete cascade,
+  author_id uuid not null references auth.users(id) on delete cascade,
+  body text not null check (char_length(body) between 1 and 400),
+  created_at timestamptz not null default now()
+);
+alter table public.post_comments enable row level security;
+drop policy if exists "Comments are publicly viewable" on public.post_comments;
+create policy "Comments are publicly viewable" on public.post_comments for select using (true);
+drop policy if exists "Users can create comments" on public.post_comments;
+create policy "Users can create comments" on public.post_comments for insert with check (auth.uid() = author_id);
+drop policy if exists "Users can delete own comments" on public.post_comments;
+create policy "Users can delete own comments" on public.post_comments for delete using (auth.uid() = author_id);
+
+create table if not exists public.post_likes (
+  post_id uuid not null references public.posts(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (post_id, user_id)
+);
+alter table public.post_likes enable row level security;
+drop policy if exists "Likes are publicly viewable" on public.post_likes;
+create policy "Likes are publicly viewable" on public.post_likes for select using (true);
+drop policy if exists "Users can like posts" on public.post_likes;
+create policy "Users can like posts" on public.post_likes for insert with check (auth.uid() = user_id);
+drop policy if exists "Users can remove own likes" on public.post_likes;
+create policy "Users can remove own likes" on public.post_likes for delete using (auth.uid() = user_id);
+
+create or replace function public.update_post_like_count() returns trigger language plpgsql security definer set search_path=public as $$
+begin
+  update public.posts set like_count=(select count(*) from public.post_likes where post_id=coalesce(new.post_id,old.post_id)) where id=coalesce(new.post_id,old.post_id);
+  return coalesce(new,old);
+end; $$;
+drop trigger if exists post_like_count_trigger on public.post_likes;
+create trigger post_like_count_trigger after insert or delete on public.post_likes for each row execute function public.update_post_like_count();
+
+create index if not exists posts_author_created_idx on public.posts(author_id, created_at desc);
+create index if not exists comments_post_idx on public.post_comments(post_id, created_at);
+create index if not exists follows_following_idx on public.follows(following_id);
