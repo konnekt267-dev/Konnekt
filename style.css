@@ -472,3 +472,15 @@ footer{border-top:1px solid var(--border);padding:28px 0 40px;color:var(--text-f
   cursor:pointer;padding:2px;transition:color .1s;
 }
 .star-input button.active{color:var(--amber);}
+
+/* ---------- accepted deal workspace ---------- */
+.deal-progress{display:flex;align-items:center;margin:18px 0 4px;padding:14px;background:var(--surface-2);border:1px solid var(--border);border-radius:12px;overflow-x:auto;}
+.deal-step{display:flex;flex-direction:column;align-items:center;gap:5px;min-width:72px;color:var(--text-faint);text-align:center;}
+.deal-step span{display:grid;place-items:center;width:25px;height:25px;border-radius:50%;border:1px solid var(--border);font:600 11px 'IBM Plex Mono',monospace;background:var(--surface);}
+.deal-step small{font-size:10.5px;white-space:nowrap;}
+.deal-step.done{color:var(--success);}
+.deal-step.done span{border-color:var(--success);background:var(--success-soft);}
+.deal-progress-line{height:2px;min-width:28px;flex:1;background:var(--border);margin-bottom:20px;}
+.deal-progress-line.done{background:var(--success);}
+.payment-state{display:inline-flex;align-items:center;gap:5px;margin-top:10px;padding:6px 9px;border-radius:999px;background:var(--amber-soft);color:var(--amber);font-size:11.5px;font-weight:600;}
+.payment-state.paid{background:var(--success-soft);color:var(--success);}
