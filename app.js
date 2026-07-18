@@ -38,6 +38,12 @@ let communityComments = {};
 let communityLikes = new Set();
 let followingIds = new Set();
 let communityFeedMode = 'discover';
+let pendingPostImage = null;
+let replySubmitting = new Set();
+let postSubmitting = false;
+let openReplyParent = {};
+const POST_IMAGE_MAX_BYTES = 700 * 1024;
+const POST_IMAGE_MAX_DIMENSION = 1600;
 
 let messages = [];             // all messages involving me
 let activeThreadUserId = null; // other user id of the open thread
@@ -1307,6 +1313,10 @@ function trustSectionHtml(trust){
   `;
 }
 
+function profileDetailHtml(label, value){
+  return value ? `<div class="profile-detail-block"><span>${label}</span><p>${escapeHtml(value)}</p></div>` : '';
+}
+
 function renderProfileModal(profile, theirListings, isOwn, trust, community){
   const listingsHtml = theirListings.length
     ? theirListings.map(l => `
@@ -1314,125 +1324,86 @@ function renderProfileModal(profile, theirListings, isOwn, trust, community){
           <div class="m-name">${escapeHtml(l.name)}</div>
           <div class="m-tag">${l.type === 'team' ? 'SPONSEE' : 'SPONSOR'} · ${escapeHtml(l.category)} · ${escapeHtml(l.tagline)}</div>
         </div>`).join('')
-    : `<p class="modal-note">No listings posted yet.</p>`;
+    : `<p class="modal-note">No active signals yet.</p>`;
 
   const body = document.getElementById('profileModalBody');
+  const typeOptions = ['Business','Nonprofit','School or university','Club or team','Creator','Event','Project','Community organization','Individual','Other'];
 
   if(isOwn){
     body.innerHTML = `
-      <div class="avatar-edit-row">
-        <span class="profile-avatar" id="avatarPreview">${avatarHtml(profile, profile.display_name, 52)}</span>
-        <div class="avatar-actions">
-          <label class="btn btn-ghost btn-small file-btn">
-            Change photo
-            <input type="file" accept="image/*" id="avatarInput" onchange="handleAvatarChange(event)" style="display:none;">
-          </label>
-          <button type="button" class="link-btn" id="removeAvatarBtn" onclick="removeAvatar()" style="display:${profile.avatar_url ? '' : 'none'};padding:0;">Remove photo</button>
-        </div>
-      </div>
-      ${profile.username ? `<div class="profile-handle">@${escapeHtml(profile.username)}</div>` : ''}
-      ${(profile.role || profile.verified) ? `<div class="profile-role-row">${roleBadgeHtml(profile.role)} ${verifiedBadgeHtml(profile.verified)}</div>` : ''}
-      <form onsubmit="saveProfile(event)">
-        <div class="field full">
-          <label for="pName">Display name</label>
-          <input type="text" id="pName" value="${escapeHtml(profile.display_name)}" required>
-        </div>
-        <div class="field full">
-          <label for="pUsername">Username <span class="field-optional">(your @handle — unique)</span></label>
-          <input type="text" id="pUsername" value="${escapeHtml(profile.username || '')}" placeholder="e.g. riverside_coffee" maxlength="24">
-        </div>
-        <div class="field full">
-          <label for="pBio">Bio</label>
-          <textarea id="pBio" maxlength="300" placeholder="Who are you or what does your sponsee/org do?">${escapeHtml(profile.bio)}</textarea>
-        </div>
-        <div class="field full">
-          <label for="pMission">Mission / what you do</label>
-          <textarea id="pMission" maxlength="500" placeholder="What does your organization, project, or brand exist to do?">${escapeHtml(profile.mission || '')}</textarea>
-        </div>
-        <div class="field full">
-          <label for="pSeeking">Sponsorship goals</label>
-          <textarea id="pSeeking" maxlength="400" placeholder="What kinds of partnerships, support, or opportunities are you looking for?">${escapeHtml(profile.seeking || '')}</textarea>
-        </div>
-        <div class="field full">
-          <label for="pAchievements">Highlights and achievements</label>
-          <textarea id="pAchievements" maxlength="600" placeholder="Awards, milestones, reach, impact, notable work…">${escapeHtml(profile.achievements || '')}</textarea>
-        </div>
-        <div class="field full">
-          <label for="pLink">Link</label>
-          <input type="text" id="pLink" value="${escapeHtml(profile.link)}" placeholder="e.g. your sponsee site or socials">
-        </div>
-        <div class="field full">
-          <label for="pLocation">Location <span class="field-optional">(helps match you with nearby sponsees &amp; sponsors)</span></label>
-          <div class="location-row">
-            <div class="autocomplete-wrap">
-              <input type="text" id="pLocation" value="${escapeHtml(profile.location_text)}" placeholder="Start typing an address or city…"
-                autocomplete="off"
-                oninput="handleLocationInput('pLocation','pLocationSuggestions')"
-                onblur="hideLocationSuggestions('pLocationSuggestions')">
-              <div class="autocomplete-list" id="pLocationSuggestions"></div>
+      <div class="profile-edit-layout">
+        <aside class="profile-edit-summary">
+          <div class="avatar-edit-row">
+            <span class="profile-avatar profile-avatar-large" id="avatarPreview">${avatarHtml(profile, profile.display_name, 88)}</span>
+            <div class="avatar-actions">
+              <label class="btn btn-ghost btn-small file-btn">Change image<input type="file" accept="image/*" id="avatarInput" onchange="handleAvatarChange(event)" style="display:none;"></label>
+              <button type="button" class="link-btn" id="removeAvatarBtn" onclick="removeAvatar()" style="display:${profile.avatar_url ? '' : 'none'};padding:0;">Remove</button>
             </div>
-            <button type="button" class="btn btn-ghost btn-small" id="useLocationBtnProfile" onclick="useMyLocation('useLocationBtnProfile','pLocation')">📍 Update location</button>
           </div>
+          <h3>${escapeHtml(profile.display_name || 'Your profile')}</h3>
+          ${profile.username ? `<div class="profile-handle">@${escapeHtml(profile.username)}</div>` : ''}
+          <div class="profile-social-stats profile-social-stats-grid">
+            <span><strong>${community.followers}</strong>Followers</span>
+            <span><strong>${community.following}</strong>Following</span>
+            <span><strong>${community.posts.length}</strong>Updates</span>
+            <span><strong>${trust.completedCount}</strong>Deals</span>
+          </div>
+        </aside>
+        <div class="profile-edit-main">
+          <form onsubmit="saveProfile(event)" class="profile-edit-form">
+            <div class="profile-form-grid">
+              <div class="field"><label for="pName">Entity name</label><input type="text" id="pName" value="${escapeHtml(profile.display_name || '')}" required></div>
+              <div class="field"><label for="pUsername">Username</label><input type="text" id="pUsername" value="${escapeHtml(profile.username || '')}" placeholder="e.g. riverside_robotics" maxlength="24"></div>
+              <div class="field"><label for="pEntityType">Entity type</label><select id="pEntityType"><option value="">Select one</option>${typeOptions.map(x=>`<option value="${x}" ${profile.entity_type===x?'selected':''}>${x}</option>`).join('')}</select></div>
+              <div class="field"><label for="pHeadline">Headline</label><input type="text" id="pHeadline" maxlength="120" value="${escapeHtml(profile.headline || '')}" placeholder="What should people know at a glance?"></div>
+              <div class="field full"><label for="pBio">Overview</label><textarea id="pBio" maxlength="500" placeholder="Introduce the organization, project, brand, or person behind this profile.">${escapeHtml(profile.bio || '')}</textarea></div>
+              <div class="field full"><label for="pMission">Mission and work</label><textarea id="pMission" maxlength="800" placeholder="What do you do, who do you serve, and why does it matter?">${escapeHtml(profile.mission || '')}</textarea></div>
+              <div class="field full"><label for="pSeeking">Sponsorship goals</label><textarea id="pSeeking" maxlength="600" placeholder="What support or partnerships are you seeking or offering?">${escapeHtml(profile.seeking || '')}</textarea></div>
+              <div class="field full"><label for="pPartnershipTypes">Partnership interests</label><input type="text" id="pPartnershipTypes" maxlength="240" value="${escapeHtml(profile.partnership_types || '')}" placeholder="Equipment, funding, mentorship, events, promotion…"></div>
+              <div class="field full"><label for="pAudience">Audience and impact</label><textarea id="pAudience" maxlength="500" placeholder="Audience size, community served, reach, participation, or measurable impact.">${escapeHtml(profile.audience || '')}</textarea></div>
+              <div class="field full"><label for="pAchievements">Highlights and achievements</label><textarea id="pAchievements" maxlength="800" placeholder="Awards, milestones, notable work, results, or press.">${escapeHtml(profile.achievements || '')}</textarea></div>
+              <div class="field"><label for="pLink">Website or main link</label><input type="url" id="pLink" value="${escapeHtml(profile.link || '')}" placeholder="https://..."></div>
+              <div class="field"><label for="pContactEmail">Public contact email</label><input type="email" id="pContactEmail" value="${escapeHtml(profile.contact_email || '')}" placeholder="partnerships@example.org"></div>
+              <div class="field full"><label for="pLocation">Location</label><div class="location-row"><div class="autocomplete-wrap"><input type="text" id="pLocation" value="${escapeHtml(profile.location_text || '')}" placeholder="City or region" autocomplete="off" oninput="handleLocationInput('pLocation','pLocationSuggestions')" onblur="hideLocationSuggestions('pLocationSuggestions')"><div class="autocomplete-list" id="pLocationSuggestions"></div></div><button type="button" class="btn btn-ghost btn-small" id="useLocationBtnProfile" onclick="useMyLocation('useLocationBtnProfile','pLocation')">📍 Use location</button></div></div>
+              <div class="field full">${tagPickerHtml('pTags', 'Topics and categories')}</div>
+              <div class="field full"><label class="checkbox-row"><input type="checkbox" id="pNotifyMatches" ${profile.notify_matches !== false ? 'checked' : ''}><span>Email me when a strong match appears</span></label></div>
+            </div>
+            <div class="profile-save-bar"><span>Keep this current so potential partners understand the opportunity.</span><button type="submit" class="btn btn-amber">Save profile</button></div>
+          </form>
         </div>
-        ${tagPickerHtml('pTags', 'Tags <span class="field-optional">(up to 8 — pick from the list)</span>')}
-        <div class="field full">
-          <label class="checkbox-row">
-            <input type="checkbox" id="pNotifyMatches" ${profile.notify_matches !== false ? 'checked' : ''}>
-            <span>Email me when a match over 75% appears</span>
-          </label>
-        </div>
-        <button type="submit" class="btn btn-amber edit-profile-btn">Save profile</button>
-      </form>
-      <div class="profile-social-stats">
-        <span><strong>${community.followers}</strong> followers</span>
-        <span><strong>${community.following}</strong> following</span>
-        <span><strong>${community.posts.length}</strong> updates</span>
       </div>
-      <div class="profile-section-label">Your updates</div>
-      <div class="profile-update-list">${profilePostsHtml(community.posts)}</div>
-      <div class="profile-section-label">Your listings — click one to view it</div>
-      <div class="profile-listings">${listingsHtml}</div>
-      <div class="profile-section-label">Trust</div>
-      ${trustSectionHtml(trust)}
-      <div class="danger-zone">
-        <div class="profile-section-label">Danger zone</div>
-        <p class="field-hint">Permanently deletes your account, listings, messages, and deals. This can't be undone.</p>
-        <button type="button" class="btn-delete-account" id="deleteAccountBtn" onclick="deleteAccount()">Delete account</button>
+      <div class="profile-content-tabs">
+        <section><div class="profile-section-label">Your updates</div><div class="profile-update-list">${profilePostsHtml(community.posts)}</div></section>
+        <section><div class="profile-section-label">Your signals</div><div class="profile-listings">${listingsHtml}</div></section>
+        <section><div class="profile-section-label">Trust and history</div>${trustSectionHtml(trust)}</section>
       </div>
-    `;
+      <div class="danger-zone"><div class="profile-section-label">Danger zone</div><p class="field-hint">Permanently deletes your account and its content.</p><button type="button" class="btn-delete-account" id="deleteAccountBtn" onclick="deleteAccount()">Delete account</button></div>`;
     initTagPicker('pTags', profile.tags || []);
   } else {
     body.innerHTML = `
-      <div class="profile-head">
-        <span class="profile-avatar">${avatarHtml(profile, profile.display_name, 52)}</span>
-        <div>
-          <div class="profile-name">${escapeHtml(profile.display_name)}</div>
-          ${profile.username ? `<div class="profile-handle">@${escapeHtml(profile.username)}</div>` : ''}
-          ${(profile.role || profile.verified) ? `<div class="profile-role-row">${roleBadgeHtml(profile.role)} ${verifiedBadgeHtml(profile.verified)}</div>` : ''}
-          ${profile.location_text ? `<div class="profile-link">${escapeHtml(profile.location_text)}</div>` : ''}
-          ${profile.link ? `<div class="profile-link"><a href="${escapeHtml(profile.link)}" target="_blank" rel="noopener">${escapeHtml(profile.link)}</a></div>` : ''}
+      <div class="profile-public-hero">
+        <span class="profile-avatar profile-avatar-hero">${avatarHtml(profile, profile.display_name, 104)}</span>
+        <div class="profile-public-main">
+          <div class="profile-identity-line"><div><h2>${escapeHtml(profile.display_name || 'Konnekt entity')}</h2>${profile.username ? `<div class="profile-handle">@${escapeHtml(profile.username)}</div>` : ''}</div>${(profile.role || profile.verified) ? `<div class="profile-role-row">${roleBadgeHtml(profile.role)} ${verifiedBadgeHtml(profile.verified)}</div>` : ''}</div>
+          ${profile.headline ? `<p class="profile-headline">${escapeHtml(profile.headline)}</p>` : ''}
+          <div class="profile-meta-row">${profile.entity_type ? `<span>${escapeHtml(profile.entity_type)}</span>` : ''}${profile.location_text ? `<span>📍 ${escapeHtml(profile.location_text)}</span>` : ''}${profile.link ? `<a href="${escapeHtml(profile.link)}" target="_blank" rel="noopener">Visit website ↗</a>` : ''}</div>
+          <div class="profile-actions-row">${session ? `<button class="btn ${community.isFollowing ? 'btn-ghost' : 'btn-amber'}" onclick="toggleFollow('${profile.id}', true)">${community.isFollowing ? 'Following' : 'Follow'}</button><button class="btn btn-cyan" onclick="closeProfileModal(); messageFromListing('${profile.id}', null);">Message</button>` : ''}</div>
         </div>
       </div>
-      <p class="profile-bio ${profile.bio ? '' : 'empty'}">${profile.bio ? escapeHtml(profile.bio) : 'No bio yet.'}</p>
-      <div class="profile-actions-row">
-        ${session ? `<button class="btn ${community.isFollowing ? 'btn-ghost' : 'btn-amber'}" onclick="toggleFollow('${profile.id}', true)">${community.isFollowing ? 'Following' : 'Follow'}</button>` : ''}
-        ${session ? `<button class="btn btn-cyan" onclick="closeProfileModal(); messageFromListing('${profile.id}', null);">Message</button>` : ''}
-      </div>
-      <div class="profile-social-stats">
-        <span><strong>${community.followers}</strong> followers</span>
-        <span><strong>${community.following}</strong> following</span>
-        <span><strong>${community.posts.length}</strong> updates</span>
-      </div>
-      ${profile.mission ? `<div class="profile-detail-block"><span>Mission</span><p>${escapeHtml(profile.mission)}</p></div>` : ''}
-      ${profile.seeking ? `<div class="profile-detail-block"><span>Sponsorship goals</span><p>${escapeHtml(profile.seeking)}</p></div>` : ''}
-      ${profile.achievements ? `<div class="profile-detail-block"><span>Highlights</span><p>${escapeHtml(profile.achievements)}</p></div>` : ''}
-      <div class="profile-section-label">Updates</div>
-      <div class="profile-update-list">${profilePostsHtml(community.posts)}</div>
-      <div class="profile-section-label">Listings — click one to view it</div>
-      <div class="profile-listings">${listingsHtml}</div>
-      <div class="profile-section-label">Trust</div>
-      ${trustSectionHtml(trust)}
-    `;
+      <div class="profile-social-stats profile-social-stats-grid public"><span><strong>${community.followers}</strong>Followers</span><span><strong>${community.following}</strong>Following</span><span><strong>${community.posts.length}</strong>Updates</span><span><strong>${trust.completedCount}</strong>Completed deals</span></div>
+      <div class="profile-public-grid">
+        <main>
+          ${profile.bio ? `<div class="profile-about-card"><h4>About</h4><p>${escapeHtml(profile.bio)}</p></div>` : ''}
+          ${profileDetailHtml('Mission and work', profile.mission)}
+          ${profileDetailHtml('Sponsorship goals', profile.seeking)}
+          ${profileDetailHtml('Partnership interests', profile.partnership_types)}
+          ${profileDetailHtml('Audience and impact', profile.audience)}
+          ${profileDetailHtml('Highlights', profile.achievements)}
+          ${profile.contact_email ? `<div class="profile-detail-block"><span>Partnership contact</span><p><a href="mailto:${escapeHtml(profile.contact_email)}">${escapeHtml(profile.contact_email)}</a></p></div>` : ''}
+          <div class="profile-section-label">Updates</div><div class="profile-update-list">${profilePostsHtml(community.posts)}</div>
+        </main>
+        <aside><div class="profile-section-label">Active signals</div><div class="profile-listings">${listingsHtml}</div><div class="profile-section-label">Trust</div>${trustSectionHtml(trust)}</aside>
+      </div>`;
   }
 }
 
@@ -1492,6 +1463,11 @@ async function saveProfile(e){
   const mission = document.getElementById('pMission').value.trim();
   const seeking = document.getElementById('pSeeking').value.trim();
   const achievements = document.getElementById('pAchievements').value.trim();
+  const entity_type = document.getElementById('pEntityType').value;
+  const headline = document.getElementById('pHeadline').value.trim();
+  const partnership_types = document.getElementById('pPartnershipTypes').value.trim();
+  const audience = document.getElementById('pAudience').value.trim();
+  const contact_email = document.getElementById('pContactEmail').value.trim();
 
   if(usernameRaw && !/^[a-zA-Z0-9_]{3,24}$/.test(usernameRaw)){
     showToast("Username should be 3–24 characters: letters, numbers, underscores only.");
@@ -1505,7 +1481,7 @@ async function saveProfile(e){
     }
   }
 
-  const payload = { display_name, bio, mission, seeking, achievements, link, location_text, notify_matches, tags, username: usernameRaw || null, updated_at: new Date().toISOString() };
+  const payload = { display_name, bio, mission, seeking, achievements, entity_type: entity_type || null, headline, partnership_types, audience, contact_email: contact_email || null, link, location_text, notify_matches, tags, username: usernameRaw || null, updated_at: new Date().toISOString() };
   if(pendingAvatarDataUrl !== undefined) payload.avatar_url = pendingAvatarDataUrl;
   if(pendingLat != null){ payload.lat = pendingLat; payload.lng = pendingLng; }
 
@@ -1670,10 +1646,11 @@ function clearPendingMessageImage(){
   renderThreadMessages();
 }
 
-function openImageLightbox(msgId){
-  const m = messages.find(x => x.id === msgId);
-  if(!m || !m.image_url) return;
-  document.getElementById('lightboxImg').src = m.image_url;
+function openImageLightbox(source){
+  const m = messages.find(x => x.id === source);
+  const url = m?.image_url || (typeof source === 'string' && /^https?:\/\//.test(source) ? source : null);
+  if(!url) return;
+  document.getElementById('lightboxImg').src = url;
   document.getElementById('imageLightboxOverlay').classList.add('open');
 }
 function closeImageLightbox(){
@@ -2157,126 +2134,103 @@ function subscribeDealsRealtime(){
 
 
 
-// ---------- community updates, follows, replies ----------
+// ---------- community updates, follows, threaded replies, images ----------
 function setCommunityFeed(mode){
   communityFeedMode = mode;
   document.querySelectorAll('.community-tabs button').forEach(b => b.classList.toggle('active', b.dataset.feed === mode));
   loadCommunityFeed();
 }
-
-function focusUpdateComposer(){
-  if(!session){ openSignupWizard(); return; }
-  setView('community');
-  setTimeout(() => document.getElementById('updateBody')?.focus(), 50);
-}
-
+function focusUpdateComposer(){ if(!session){ openSignupWizard(); return; } setView('community'); setTimeout(()=>document.getElementById('updateBody')?.focus(),50); }
 function renderCommunityComposer(){
-  const el = document.getElementById('communityComposer');
-  if(!el) return;
-  if(!session){
-    el.innerHTML = `<div class="signed-out-notice"><strong>Join the community</strong><p>Sign in to share progress, announcements, wins, needs, or behind-the-scenes updates.</p><button class="btn btn-amber" onclick="openSignupWizard()">Create account</button></div>`;
-    return;
+  const el=document.getElementById('communityComposer'); if(!el)return;
+  if(!session){ el.innerHTML=`<div class="signed-out-notice"><strong>Join the community</strong><p>Sign in to share progress, announcements, wins, needs, or behind-the-scenes updates.</p><button class="btn btn-amber" onclick="openSignupWizard()">Create account</button></div>`; return; }
+  el.innerHTML=`<div class="composer-head">${avatarHtml(myProfile,displayName(),42)}<div><strong>Share an update as ${escapeHtml(displayName())}</strong><span>Progress, events, needs, opportunities, and sponsorship impact.</span></div></div>
+    <textarea id="updateBody" maxlength="800" placeholder="What is happening?"></textarea>
+    <div id="postImagePreview" class="post-image-preview" style="display:none"></div>
+    <div class="composer-foot"><div class="composer-tools"><label class="btn btn-ghost btn-small file-btn">📷 Add image<input type="file" accept="image/jpeg,image/png,image/webp" onchange="handlePostImage(event)" style="display:none"></label><span id="updateCounter">0 / 800</span></div><button id="postUpdateBtn" class="btn btn-amber" onclick="createCommunityPost()">Post update</button></div>`;
+  document.getElementById('updateBody').addEventListener('input',e=>document.getElementById('updateCounter').textContent=`${e.target.value.length} / 800`);
+}
+async function compressImageFile(file,maxBytes=POST_IMAGE_MAX_BYTES,maxDimension=POST_IMAGE_MAX_DIMENSION){
+  if(!file.type.startsWith('image/')) throw new Error('Choose an image file.');
+  if(file.size>15*1024*1024) throw new Error('That image is over 15 MB. Choose a smaller original.');
+  const bitmap=await createImageBitmap(file); let w=bitmap.width,h=bitmap.height;
+  const scale=Math.min(1,maxDimension/Math.max(w,h)); w=Math.max(1,Math.round(w*scale)); h=Math.max(1,Math.round(h*scale));
+  const canvas=document.createElement('canvas'); canvas.width=w; canvas.height=h; const ctx=canvas.getContext('2d'); ctx.drawImage(bitmap,0,0,w,h); bitmap.close?.();
+  let quality=.84, blob;
+  do{ blob=await new Promise(r=>canvas.toBlob(r,'image/jpeg',quality)); quality-=.08; }while(blob && blob.size>maxBytes && quality>=.42);
+  if(!blob) throw new Error('Could not compress that image.');
+  if(blob.size>maxBytes){
+    const shrink=Math.sqrt(maxBytes/blob.size)*.92; const c2=document.createElement('canvas'); c2.width=Math.max(1,Math.round(w*shrink)); c2.height=Math.max(1,Math.round(h*shrink)); c2.getContext('2d').drawImage(canvas,0,0,c2.width,c2.height); blob=await new Promise(r=>c2.toBlob(r,'image/jpeg',.7));
   }
-  el.innerHTML = `<div class="composer-head">${avatarHtml(myProfile, displayName(), 42)}<div><strong>Share an update as ${escapeHtml(displayName())}</strong><span>Keep sponsors and sponsees connected to what is happening.</span></div></div>
-    <textarea id="updateBody" maxlength="800" placeholder="What is happening? Share a milestone, event, need, opportunity, or thank-you…"></textarea>
-    <div class="composer-foot"><span id="updateCounter">0 / 800</span><button class="btn btn-amber" onclick="createCommunityPost()">Post update</button></div>`;
-  document.getElementById('updateBody').addEventListener('input', e => document.getElementById('updateCounter').textContent = `${e.target.value.length} / 800`);
+  if(!blob || blob.size>maxBytes) throw new Error('Image could not be reduced below 700 KB.');
+  return new File([blob],`post-${Date.now()}.jpg`,{type:'image/jpeg'});
 }
-
-async function loadMyFollowing(){
-  followingIds = new Set();
-  if(!session) return;
-  const { data } = await sb.from('follows').select('following_id').eq('follower_id', session.user.id);
-  (data || []).forEach(f => followingIds.add(f.following_id));
+async function handlePostImage(e){
+  const file=e.target.files?.[0]; if(!file)return;
+  try{ showToast('Compressing image…'); pendingPostImage=await compressImageFile(file); const url=URL.createObjectURL(pendingPostImage); const box=document.getElementById('postImagePreview'); box.style.display=''; box.innerHTML=`<img src="${url}" alt="Selected image"><div><strong>${Math.round(pendingPostImage.size/1024)} KB after compression</strong><span>Uploaded only when you post.</span></div><button onclick="removePostImage()" aria-label="Remove image">×</button>`; }
+  catch(err){ pendingPostImage=null; showToast(err.message||"Couldn't process that image."); }
 }
-
+function removePostImage(){ pendingPostImage=null; const box=document.getElementById('postImagePreview'); if(box){box.innerHTML='';box.style.display='none';} }
+async function uploadPostImage(file){
+  const path=`${session.user.id}/${crypto.randomUUID()}.jpg`;
+  const {error}=await sb.storage.from('post-images').upload(path,file,{contentType:'image/jpeg',cacheControl:'3600',upsert:false});
+  if(error) throw error;
+  return sb.storage.from('post-images').getPublicUrl(path).data.publicUrl;
+}
+async function loadMyFollowing(){ followingIds=new Set(); if(!session)return; const {data}=await sb.from('follows').select('following_id').eq('follower_id',session.user.id); (data||[]).forEach(f=>followingIds.add(f.following_id)); }
 async function loadCommunityFeed(){
-  const feed = document.getElementById('communityFeed');
-  if(!feed) return;
-  feed.innerHTML = `<div class="empty-state">Loading community updates…</div>`;
-  await loadMyFollowing();
-  let query = sb.from('posts').select('*').order('created_at', { ascending:false }).limit(60);
-  if(communityFeedMode === 'following'){
-    if(!session){ feed.innerHTML = `<div class="empty-state"><strong>Sign in to see followed profiles</strong>Follow sponsors and sponsees to build your own feed.</div>`; return; }
-    const ids = [...followingIds, session.user.id];
-    if(!ids.length){ feed.innerHTML = `<div class="empty-state"><strong>Your following feed is empty</strong>Open a profile and follow entities you want to keep up with.</div>`; return; }
-    query = query.in('author_id', ids);
+  const feed=document.getElementById('communityFeed'); if(!feed)return; feed.innerHTML=`<div class="empty-state">Loading community updates…</div>`; await loadMyFollowing();
+  let query=sb.from('posts').select('*').order('created_at',{ascending:false}).limit(60);
+  if(communityFeedMode==='following'){
+    if(!session){feed.innerHTML=`<div class="empty-state"><strong>Sign in to see followed profiles</strong>Follow sponsors and sponsees to build your feed.</div>`;return;}
+    const ids=[...followingIds,session.user.id]; query=query.in('author_id',ids);
   }
-  const { data, error } = await query;
-  if(error){ feed.innerHTML = `<div class="empty-state">Community updates are not enabled yet. Run the new community SQL migration in Supabase.</div>`; return; }
-  communityPosts = data || [];
-  const authorIds = [...new Set(communityPosts.map(p => p.author_id))];
-  const missing = authorIds.filter(id => !profileCache[id]);
-  if(missing.length){ const { data: ps } = await sb.from('profiles').select('*').in('id', missing); (ps || []).forEach(p => profileCache[p.id]=p); }
-  const postIds = communityPosts.map(p => p.id);
-  communityComments = {}; communityLikes = new Set();
+  const {data,error}=await query; if(error){feed.innerHTML=`<div class="empty-state">Community updates are not enabled yet. Run the community SQL in Supabase.</div>`;return;}
+  communityPosts=data||[]; const authorIds=[...new Set(communityPosts.map(p=>p.author_id))]; const missing=authorIds.filter(id=>!profileCache[id]);
+  if(missing.length){const {data:ps}=await sb.from('profiles').select('*').in('id',missing);(ps||[]).forEach(p=>profileCache[p.id]=p);}
+  const postIds=communityPosts.map(p=>p.id); communityComments={}; communityLikes=new Set();
   if(postIds.length){
-    const [{data: comments},{data: likes}] = await Promise.all([
-      sb.from('post_comments').select('*').in('post_id', postIds).order('created_at', {ascending:true}),
-      sb.from('post_likes').select('*').in('post_id', postIds)
-    ]);
-    (comments || []).forEach(c => (communityComments[c.post_id] ||= []).push(c));
-    const commenterIds=[...new Set((comments||[]).map(c=>c.author_id))].filter(id=>!profileCache[id]);
-    if(commenterIds.length){ const {data: cps}=await sb.from('profiles').select('*').in('id',commenterIds); (cps||[]).forEach(p=>profileCache[p.id]=p); }
-    (likes || []).forEach(l => { if(session && l.user_id===session.user.id) communityLikes.add(l.post_id); });
+    const [{data:comments},{data:likes}]=await Promise.all([sb.from('post_comments').select('*').in('post_id',postIds).order('created_at',{ascending:true}),sb.from('post_likes').select('*').in('post_id',postIds)]);
+    const uniqueComments=[...new Map((comments||[]).map(c=>[c.id,c])).values()]; uniqueComments.forEach(c=>(communityComments[c.post_id]||=[]).push(c));
+    const commenterIds=[...new Set(uniqueComments.map(c=>c.author_id))].filter(id=>!profileCache[id]); if(commenterIds.length){const {data:cps}=await sb.from('profiles').select('*').in('id',commenterIds);(cps||[]).forEach(p=>profileCache[p.id]=p);}
+    (likes||[]).forEach(l=>{if(session&&l.user_id===session.user.id)communityLikes.add(l.post_id);});
   }
   renderCommunityFeed();
 }
-
-function postCardHtml(post, compact=false){
-  const author=profileCache[post.author_id] || {};
-  const comments=communityComments[post.id] || [];
-  const mine=session && post.author_id===session.user.id;
-  return `<article class="update-card ${compact?'compact':''}">
-    <div class="update-author" onclick="openProfile('${post.author_id}')">${avatarHtml(author,author.display_name,42)}<div><strong>${escapeHtml(author.display_name||'Konnekt member')}</strong><span>${author.role ? author.role.toUpperCase()+' · ' : ''}${timeAgo(post.created_at)}</span></div></div>
-    <div class="update-body">${escapeHtml(post.body).replace(/\n/g,'<br>')}</div>
-    <div class="update-actions">
-      <button class="${communityLikes.has(post.id)?'active':''}" onclick="togglePostLike('${post.id}')">♥ ${post.like_count||0}</button>
-      <button onclick="toggleReplies('${post.id}')">Reply ${comments.length?`(${comments.length})`:''}</button>
-      ${mine?`<button class="danger-link" onclick="deleteCommunityPost('${post.id}')">Delete</button>`:''}
-    </div>
-    <div class="reply-area" id="replies-${post.id}" style="display:${compact?'none':'none'};">
-      <div class="reply-list">${comments.map(commentHtml).join('') || '<span class="reply-empty">No replies yet.</span>'}</div>
-      ${session?`<div class="reply-compose"><input type="text" id="reply-${post.id}" maxlength="400" placeholder="Write a reply…" onkeydown="if(event.key==='Enter') createReply('${post.id}')"><button onclick="createReply('${post.id}')">Reply</button></div>`:''}
-    </div>
-  </article>`;
+function commentTreeHtml(postId,comments,parentId=null,depth=0){
+  return comments.filter(c=>(c.parent_comment_id||null)===parentId).map(c=>{const a=profileCache[c.author_id]||{}; const children=commentTreeHtml(postId,comments,c.id,depth+1); return `<div class="reply-thread depth-${Math.min(depth,3)}"><div class="reply-item"><div class="reply-avatar">${avatarHtml(a,a.display_name,28)}</div><div class="reply-bubble"><div class="reply-head"><strong onclick="openProfile('${c.author_id}')">${escapeHtml(a.display_name||'Member')}</strong><small>${timeAgo(c.created_at)}</small></div><span>${escapeHtml(c.body)}</span><button class="reply-to-btn" onclick="showNestedReply('${postId}','${c.id}','${escapeHtml((a.display_name||'Member').replace(/'/g,"\\'"))}')">Reply</button></div></div><div id="nested-${c.id}"></div>${children}</div>`;}).join('');
 }
-function commentHtml(c){ const a=profileCache[c.author_id]||{}; return `<div class="reply-item"><strong onclick="openProfile('${c.author_id}')">${escapeHtml(a.display_name||'Member')}</strong><span>${escapeHtml(c.body)}</span><small>${timeAgo(c.created_at)}</small></div>`; }
-function renderCommunityFeed(){ const el=document.getElementById('communityFeed'); if(!el)return; el.innerHTML=communityPosts.length?communityPosts.map(p=>postCardHtml(p)).join(''):`<div class="empty-state"><strong>No updates here yet</strong>Be the first to share what your organization, project, or sponsorship is doing.</div>`; }
-function profilePostsHtml(posts){ return posts.length ? posts.slice(0,12).map(p=>postCardHtml(p,true)).join('') : `<p class="modal-note">No updates posted yet.</p>`; }
-
+function postCardHtml(post,compact=false){
+  const author=profileCache[post.author_id]||{}; const comments=communityComments[post.id]||[]; const mine=session&&post.author_id===session.user.id;
+  return `<article class="update-card ${compact?'compact':''}"><div class="update-author" onclick="openProfile('${post.author_id}')">${avatarHtml(author,author.display_name,42)}<div><strong>${escapeHtml(author.display_name||'Konnekt member')}</strong><span>${author.entity_type?escapeHtml(author.entity_type)+' · ':author.role?author.role.toUpperCase()+' · ':''}${timeAgo(post.created_at)}</span></div></div><div class="update-body">${escapeHtml(post.body).replace(/\n/g,'<br>')}</div>${post.image_url?`<button class="post-image-button" onclick="openImageLightbox('${escapeHtml(post.image_url)}')"><img class="post-image" src="${escapeHtml(post.image_url)}" alt="Image shared with this update" loading="lazy"></button>`:''}<div class="update-actions"><button class="${communityLikes.has(post.id)?'active':''}" onclick="togglePostLike('${post.id}')">♥ ${post.like_count||0}</button><button onclick="toggleReplies('${post.id}')">Reply ${comments.length?`(${comments.length})`:''}</button>${mine?`<button class="danger-link" onclick="deleteCommunityPost('${post.id}')">Delete</button>`:''}</div><div class="reply-area" id="replies-${post.id}" style="display:none"><div class="reply-list">${commentTreeHtml(post.id,comments)||'<span class="reply-empty">No replies yet.</span>'}</div>${session?`<div class="reply-compose"><input type="text" id="reply-${post.id}" maxlength="400" placeholder="Write a reply…" onkeydown="handleReplyKey(event,'${post.id}',null)"><button id="reply-btn-${post.id}" onclick="createReply('${post.id}',null)">Reply</button></div>`:''}</div></article>`;
+}
+function renderCommunityFeed(){const el=document.getElementById('communityFeed');if(!el)return;el.innerHTML=communityPosts.length?communityPosts.map(p=>postCardHtml(p)).join(''):`<div class="empty-state"><strong>No updates here yet</strong>Be the first to share what your organization, project, or sponsorship is doing.</div>`;}
+function profilePostsHtml(posts){return posts.length?posts.slice(0,12).map(p=>postCardHtml(p,true)).join(''):`<p class="modal-note">No updates posted yet.</p>`;}
 async function createCommunityPost(){
-  if(!session){ openAuthModal(); return; }
-  const input=document.getElementById('updateBody'); const body=input?.value.trim();
-  if(!body){ showToast('Write something before posting.'); return; }
-  const {error}=await sb.from('posts').insert({author_id:session.user.id,body});
-  if(error){ showToast("Couldn't post — "+error.message); return; }
-  input.value=''; document.getElementById('updateCounter').textContent='0 / 800'; showToast('Update posted.'); await loadCommunityFeed();
+  if(!session){openAuthModal();return;} if(postSubmitting)return; const input=document.getElementById('updateBody'); const body=input?.value.trim(); if(!body&&!pendingPostImage){showToast('Write something or add an image before posting.');return;}
+  postSubmitting=true; const btn=document.getElementById('postUpdateBtn'); if(btn){btn.disabled=true;btn.textContent='Posting…';}
+  try{let image_url=null;if(pendingPostImage)image_url=await uploadPostImage(pendingPostImage);const {error}=await sb.from('posts').insert({author_id:session.user.id,body:body||'Shared an image',image_url});if(error)throw error;input.value='';document.getElementById('updateCounter').textContent='0 / 800';removePostImage();showToast('Update posted.');await loadCommunityFeed();}
+  catch(err){showToast("Couldn't post — "+err.message);}finally{postSubmitting=false;if(btn){btn.disabled=false;btn.textContent='Post update';}}
 }
-async function deleteCommunityPost(id){ if(!confirm('Delete this update?'))return; const {error}=await sb.from('posts').delete().eq('id',id).eq('author_id',session.user.id); if(error)showToast(error.message); else {showToast('Update deleted.');loadCommunityFeed();} }
-function toggleReplies(id){ const el=document.getElementById('replies-'+id); if(el)el.style.display=el.style.display==='none'?'':'none'; }
-async function createReply(postId){ const input=document.getElementById('reply-'+postId); const body=input?.value.trim(); if(!body)return; const {error}=await sb.from('post_comments').insert({post_id:postId,author_id:session.user.id,body}); if(error)showToast("Couldn't reply — "+error.message); else await loadCommunityFeed(); }
-async function togglePostLike(postId){ if(!session){openAuthModal();return;} if(communityLikes.has(postId)) await sb.from('post_likes').delete().eq('post_id',postId).eq('user_id',session.user.id); else await sb.from('post_likes').insert({post_id:postId,user_id:session.user.id}); await loadCommunityFeed(); }
-async function toggleFollow(userId, reopen=false){
-  if(!session){openAuthModal();return;} if(userId===session.user.id)return;
-  if(followingIds.has(userId)){ await sb.from('follows').delete().eq('follower_id',session.user.id).eq('following_id',userId); showToast('Unfollowed.'); }
-  else { const {error}=await sb.from('follows').insert({follower_id:session.user.id,following_id:userId}); if(error){showToast(error.message);return;} showToast('Following. Their updates will appear in your feed.'); }
-  await loadMyFollowing(); if(reopen)openProfile(userId); else loadCommunityFeed();
+async function deleteCommunityPost(id){if(!confirm('Delete this update?'))return;const post=communityPosts.find(p=>p.id===id);const {error}=await sb.from('posts').delete().eq('id',id).eq('author_id',session.user.id);if(error)showToast(error.message);else{if(post?.image_url){const marker='/post-images/';const idx=post.image_url.indexOf(marker);if(idx>=0)await sb.storage.from('post-images').remove([decodeURIComponent(post.image_url.slice(idx+marker.length))]);}showToast('Update deleted.');loadCommunityFeed();}}
+function toggleReplies(id){const el=document.getElementById('replies-'+id);if(el)el.style.display=el.style.display==='none'?'':'none';}
+function handleReplyKey(event,postId,parentId){if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();event.stopPropagation();createReply(postId,parentId);}}
+function showNestedReply(postId,parentId,name){const holder=document.getElementById('nested-'+parentId);if(!holder)return;holder.innerHTML=`<div class="nested-reply-compose"><input id="reply-${postId}-${parentId}" maxlength="400" placeholder="Reply to ${escapeHtml(name)}…" onkeydown="handleReplyKey(event,'${postId}','${parentId}')"><button id="reply-btn-${postId}-${parentId}" onclick="createReply('${postId}','${parentId}')">Reply</button></div>`;holder.querySelector('input')?.focus();}
+async function createReply(postId,parentId=null){
+  if(!session){openAuthModal();return;} const key=`${postId}:${parentId||'root'}`; if(replySubmitting.has(key))return; const input=document.getElementById(parentId?`reply-${postId}-${parentId}`:`reply-${postId}`); const body=input?.value.trim(); if(!body)return;
+  replySubmitting.add(key); const btn=document.getElementById(parentId?`reply-btn-${postId}-${parentId}`:`reply-btn-${postId}`); if(btn){btn.disabled=true;btn.textContent='Sending…';}
+  const clientToken=crypto.randomUUID(); const {error}=await sb.from('post_comments').insert({post_id:postId,author_id:session.user.id,parent_comment_id:parentId,body,client_token:clientToken});
+  if(error)showToast("Couldn't reply — "+error.message); else {input.value='';await loadCommunityFeed();setTimeout(()=>{const area=document.getElementById('replies-'+postId);if(area)area.style.display='';},0);}
+  replySubmitting.delete(key); if(btn){btn.disabled=false;btn.textContent='Reply';}
 }
+async function togglePostLike(postId){if(!session){openAuthModal();return;}if(communityLikes.has(postId))await sb.from('post_likes').delete().eq('post_id',postId).eq('user_id',session.user.id);else await sb.from('post_likes').insert({post_id:postId,user_id:session.user.id});await loadCommunityFeed();}
+async function toggleFollow(userId,reopen=false){if(!session){openAuthModal();return;}if(userId===session.user.id)return;if(followingIds.has(userId)){await sb.from('follows').delete().eq('follower_id',session.user.id).eq('following_id',userId);showToast('Unfollowed.');}else{const {error}=await sb.from('follows').insert({follower_id:session.user.id,following_id:userId});if(error){showToast(error.message);return;}showToast('Following. Their updates will appear in your feed.');}await loadMyFollowing();if(reopen)openProfile(userId);else loadCommunityFeed();}
 async function loadProfileCommunityInfo(userId){
-  const [{count:followers},{count:following},{data:posts},{data:followRow}] = await Promise.all([
-    sb.from('follows').select('follower_id',{count:'exact',head:true}).eq('following_id',userId),
-    sb.from('follows').select('following_id',{count:'exact',head:true}).eq('follower_id',userId),
-    sb.from('posts').select('*').eq('author_id',userId).order('created_at',{ascending:false}).limit(20),
-    session && userId!==session.user.id ? sb.from('follows').select('following_id').eq('follower_id',session.user.id).eq('following_id',userId).maybeSingle() : Promise.resolve({data:null})
-  ]);
-  const ps=posts||[]; const ids=ps.map(p=>p.id); if(ids.length){ const {data:cs}=await sb.from('post_comments').select('*').in('post_id',ids); (cs||[]).forEach(c=>(communityComments[c.post_id]||=[]).push(c)); }
-  return {followers:followers||0,following:following||0,posts:ps,isFollowing:!!followRow};
+  const [{count:followers},{count:following},{data:posts},{data:followRow}]=await Promise.all([sb.from('follows').select('follower_id',{count:'exact',head:true}).eq('following_id',userId),sb.from('follows').select('following_id',{count:'exact',head:true}).eq('follower_id',userId),sb.from('posts').select('*').eq('author_id',userId).order('created_at',{ascending:false}).limit(20),session&&userId!==session.user.id?sb.from('follows').select('following_id').eq('follower_id',session.user.id).eq('following_id',userId).maybeSingle():Promise.resolve({data:null})]);
+  const ps=posts||[];const ids=ps.map(p=>p.id);if(ids.length){const {data:cs}=await sb.from('post_comments').select('*').in('post_id',ids).order('created_at',{ascending:true});const grouped={};[...new Map((cs||[]).map(c=>[c.id,c])).values()].forEach(c=>(grouped[c.post_id]||=[]).push(c));ids.forEach(id=>communityComments[id]=grouped[id]||[]);const commenterIds=[...new Set((cs||[]).map(c=>c.author_id))].filter(id=>!profileCache[id]);if(commenterIds.length){const {data:cps}=await sb.from('profiles').select('*').in('id',commenterIds);(cps||[]).forEach(p=>profileCache[p.id]=p);}}
+  return{followers:followers||0,following:following||0,posts:ps,isFollowing:!!followRow};
 }
-
-function subscribeCommunityRealtime(){
-  sb.channel('community-changes').on('postgres_changes',{event:'*',schema:'public',table:'posts'},()=>{ if(document.getElementById('communitySection')?.style.display!=='none')loadCommunityFeed(); }).on('postgres_changes',{event:'*',schema:'public',table:'post_comments'},()=>{ if(document.getElementById('communitySection')?.style.display!=='none')loadCommunityFeed(); }).subscribe();
-}
+function subscribeCommunityRealtime(){sb.channel('community-changes').on('postgres_changes',{event:'*',schema:'public',table:'posts'},()=>{if(document.getElementById('communitySection')?.style.display!=='none')loadCommunityFeed();}).on('postgres_changes',{event:'*',schema:'public',table:'post_comments'},()=>{if(document.getElementById('communitySection')?.style.display!=='none')loadCommunityFeed();}).subscribe();}
 
 // ---------- init ----------
 async function init(){
