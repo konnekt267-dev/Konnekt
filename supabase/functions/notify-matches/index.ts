@@ -41,11 +41,14 @@ function milesBetween(a: any, b: any): number | null {
 }
 
 // Mirrors app.js's computeMatchPct exactly — keep these in sync if that logic changes.
+function normalizeTag(t: string): string {
+  return (t || "").trim().toLowerCase().replace(/s$/, ""); // case-insensitive, ignores a trailing plural "s"
+}
 function computeMatchPct(mine: any, other: any, myProfileRow: any, otherProfileRow: any): number | null {
   if (!mine || !other) return null;
   let total = 0;
 
-  const mt: string[] = mine.tags || [], ot: string[] = other.tags || [];
+  const mt: string[] = (mine.tags || []).map(normalizeTag), ot: string[] = (other.tags || []).map(normalizeTag);
   if (mt.length && ot.length) {
     const overlap = mt.filter((t) => ot.includes(t)).length;
     const union = new Set([...mt, ...ot]).size || 1;
@@ -72,7 +75,7 @@ function computeMatchPct(mine: any, other: any, myProfileRow: any, otherProfileR
     total += 10;
   }
 
-  return Math.max(5, Math.min(99, Math.round(total)));
+  return Math.max(5, Math.min(100, Math.round(total)));
 }
 
 Deno.serve(async (req) => {
