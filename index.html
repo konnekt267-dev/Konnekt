@@ -13,6 +13,7 @@
     <div class="logo"><span class="dot"></span>Konnekt</div>
     <nav>
       <button class="nav-btn active" data-view="board" onclick="setView('board')">Board</button>
+      <button class="nav-btn" data-view="community" onclick="setView('community')">Community</button>
       <button class="nav-btn" data-view="post" onclick="setView('post')">Post a signal</button>
       <button class="nav-btn" data-view="deals" onclick="setView('deals')">Deals<span class="nav-badge" id="dealsBadge" style="display:none;"></span></button>
       <button class="nav-btn" data-view="messages" onclick="setView('messages')">Messages<span class="nav-badge" id="threadBadge" style="display:none;"></span></button>
@@ -64,6 +65,20 @@
     </div>
 
     <div class="board-grid" id="boardGrid"></div>
+  </section>
+
+
+  <section id="communitySection" style="display:none;">
+    <div class="section-title community-title">
+      <div><h2>Community updates</h2><span class="hint">Progress, wins, needs, and news from sponsorship-ready entities.</span></div>
+      <button class="btn btn-amber" onclick="focusUpdateComposer()">Post an update</button>
+    </div>
+    <div id="communityComposer" class="update-composer"></div>
+    <div class="community-tabs">
+      <button class="active" data-feed="discover" onclick="setCommunityFeed('discover')">Discover</button>
+      <button data-feed="following" onclick="setCommunityFeed('following')">Following</button>
+    </div>
+    <div id="communityFeed" class="community-feed"></div>
   </section>
 
   <div class="post-panel" id="postPanel">
