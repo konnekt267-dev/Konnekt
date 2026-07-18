@@ -33,6 +33,12 @@ let myProfile = null;          // { id, display_name, bio, link, avatar_url, loc
 let profileCache = {};         // userId -> profile row
 let profileModalUserId = null;
 
+let communityPosts = [];
+let communityComments = {};
+let communityLikes = new Set();
+let followingIds = new Set();
+let communityFeedMode = 'discover';
+
 let messages = [];             // all messages involving me
 let activeThreadUserId = null; // other user id of the open thread
 let pendingListingContext = null; // listing id to attach to the next sent message
@@ -377,10 +383,12 @@ function matchRingHtml(pct){
 function setView(view){
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active', b.dataset.view===view));
   document.getElementById('boardSection').style.display = view==='board' ? '' : 'none';
+  document.getElementById('communitySection').style.display = view==='community' ? '' : 'none';
   document.getElementById('postPanel').classList.toggle('open', view==='post');
   document.getElementById('messagesPanel').classList.toggle('open', view==='messages');
   document.getElementById('dealsPanel').classList.toggle('open', view==='deals');
   if(view==='board') renderBoard();
+  if(view==='community'){ renderCommunityComposer(); loadCommunityFeed(); }
   if(view==='post') refreshPostGate();
   if(view==='messages') refreshMessagesGate();
   if(view==='deals') refreshDealsGate();
@@ -917,56 +925,6 @@ async function deleteAccount(){
   }
 }
 
-// ---------- viral sharing / deep links ----------
-function signalUrl(id){
-  const url = new URL(window.location.href);
-  url.search = '';
-  url.hash = '';
-  url.searchParams.set('signal', id);
-  return url.toString();
-}
-
-async function shareSignal(id, event){
-  if(event) event.stopPropagation();
-  const l = listings.find(x => x.id === id);
-  if(!l) return;
-
-  const url = signalUrl(id);
-  const text = l.type === 'team'
-    ? `Help ${l.name} find the right sponsor on Konnekt — ${l.tagline}`
-    : `${l.name} is looking to support a great project on Konnekt — ${l.tagline}`;
-
-  try{
-    if(navigator.share){
-      await navigator.share({ title: `${l.name} · Konnekt`, text, url });
-      showToast('Signal shared — every share helps the network grow.');
-      return;
-    }
-    await navigator.clipboard.writeText(`${text}\n${url}`);
-    showToast('Share link copied.');
-  }catch(err){
-    if(err?.name === 'AbortError') return;
-    try{
-      const ta = document.createElement('textarea');
-      ta.value = `${text}\n${url}`;
-      ta.style.position = 'fixed';
-      ta.style.opacity = '0';
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      ta.remove();
-      showToast('Share link copied.');
-    }catch(_){
-      window.prompt('Copy this signal link:', url);
-    }
-  }
-}
-
-function openSharedSignalFromUrl(){
-  const id = new URLSearchParams(window.location.search).get('signal');
-  if(id && listings.some(l => l.id === id)) openListingDetail(id, false);
-}
-
 // ---------- listings ----------
 async function loadListings(){
   const { data, error } = await sb.from('listings').select('*').order('created_at', { ascending: false });
@@ -1055,7 +1013,6 @@ function renderBoard(){
         <div class="card-side-actions">
           ${!isOwner ? `<button class="btn-connect" onclick="messageFromListing('${l.user_id}','${l.id}')">Connect</button>` : ''}
           ${canProposeDeal ? `<button class="btn-offer" onclick="openProposeDeal('${l.id}')">Make an offer</button>` : ''}
-          <button class="btn-share" onclick="shareSignal('${l.id}', event)" title="Share this signal">↗ Share</button>
         </div>
         ${isOwner ? `<button class="btn btn-ghost btn-small" onclick="openEditListing('${l.id}')">Edit</button>` : ''}
         ${isOwner ? `<button class="del-btn" onclick="deleteListing('${l.id}')">Remove</button>` : ''}
@@ -1126,7 +1083,7 @@ async function submitListing(e){
   initTagPicker('fTags', []);
   document.getElementById('cancelEditBtn').style.display = 'none';
   populateCategorySelects();
-  showToast(isEditing ? "Listing updated." : "You're live — share your signal to reach people faster.");
+  showToast(isEditing ? "Listing updated." : "You're live on the board.");
   setView('board');
   setBoardType(postType === 'team' ? 'team' : 'sponsor');
 }
@@ -1175,7 +1132,7 @@ async function deleteListing(id){
 }
 
 // ---------- listing detail modal ----------
-function openListingDetail(id, updateUrl = true){
+function openListingDetail(id){
   const l = listings.find(x => x.id === id);
   if(!l) return;
   const poster = profileCache[l.user_id];
@@ -1205,24 +1162,13 @@ function openListingDetail(id, updateUrl = true){
       ${!isOwner ? `<button class="btn-connect" onclick="closeListingModal(); messageFromListing('${l.user_id}','${l.id}')">Connect</button>` : ''}
       ${canProposeDeal ? `<button class="btn-offer" onclick="openProposeDeal('${l.id}')">Make an offer</button>` : ''}
       ${isOwner ? `<button class="btn btn-ghost btn-small" onclick="openEditListing('${l.id}')">Edit</button>` : ''}
-      <button class="btn-share" onclick="shareSignal('${l.id}', event)">↗ Share signal</button>
       ${isOwner ? `<button class="del-btn" onclick="closeListingModal(); deleteListing('${l.id}')">Remove</button>` : ''}
     </div>
   `;
   document.getElementById('listingOverlay').classList.add('open');
-  if(updateUrl){
-    const url = new URL(window.location.href);
-    url.searchParams.set('signal', id);
-    history.pushState({ signal: id }, '', url);
-  }
 }
-function closeListingModal(updateUrl = true){
+function closeListingModal(){
   document.getElementById('listingOverlay').classList.remove('open');
-  if(updateUrl){
-    const url = new URL(window.location.href);
-    url.searchParams.delete('signal');
-    history.replaceState({}, '', url);
-  }
 }
 
 // ---------- profiles ----------
@@ -1277,6 +1223,7 @@ async function openProfile(userId){
   const theirListings = listings.filter(l => l.user_id === userId);
   const isOwn = session && session.user.id === userId;
   const trust = await loadProfileTrustInfo(userId);
+  const community = await loadProfileCommunityInfo(userId);
 
   document.getElementById('profileModalTitle').textContent = isOwn ? "Your profile" : "Profile";
 
@@ -1285,7 +1232,7 @@ async function openProfile(userId){
     return;
   }
 
-  renderProfileModal(profile, theirListings, isOwn, trust);
+  renderProfileModal(profile, theirListings, isOwn, trust, community);
 }
 
 async function loadProfileTrustInfo(userId){
@@ -1360,7 +1307,7 @@ function trustSectionHtml(trust){
   `;
 }
 
-function renderProfileModal(profile, theirListings, isOwn, trust){
+function renderProfileModal(profile, theirListings, isOwn, trust, community){
   const listingsHtml = theirListings.length
     ? theirListings.map(l => `
         <div class="mini-listing" onclick="openListingFromProfile('${l.id}')">
@@ -1399,6 +1346,18 @@ function renderProfileModal(profile, theirListings, isOwn, trust){
           <textarea id="pBio" maxlength="300" placeholder="Who are you or what does your sponsee/org do?">${escapeHtml(profile.bio)}</textarea>
         </div>
         <div class="field full">
+          <label for="pMission">Mission / what you do</label>
+          <textarea id="pMission" maxlength="500" placeholder="What does your organization, project, or brand exist to do?">${escapeHtml(profile.mission || '')}</textarea>
+        </div>
+        <div class="field full">
+          <label for="pSeeking">Sponsorship goals</label>
+          <textarea id="pSeeking" maxlength="400" placeholder="What kinds of partnerships, support, or opportunities are you looking for?">${escapeHtml(profile.seeking || '')}</textarea>
+        </div>
+        <div class="field full">
+          <label for="pAchievements">Highlights and achievements</label>
+          <textarea id="pAchievements" maxlength="600" placeholder="Awards, milestones, reach, impact, notable work…">${escapeHtml(profile.achievements || '')}</textarea>
+        </div>
+        <div class="field full">
           <label for="pLink">Link</label>
           <input type="text" id="pLink" value="${escapeHtml(profile.link)}" placeholder="e.g. your sponsee site or socials">
         </div>
@@ -1424,6 +1383,13 @@ function renderProfileModal(profile, theirListings, isOwn, trust){
         </div>
         <button type="submit" class="btn btn-amber edit-profile-btn">Save profile</button>
       </form>
+      <div class="profile-social-stats">
+        <span><strong>${community.followers}</strong> followers</span>
+        <span><strong>${community.following}</strong> following</span>
+        <span><strong>${community.posts.length}</strong> updates</span>
+      </div>
+      <div class="profile-section-label">Your updates</div>
+      <div class="profile-update-list">${profilePostsHtml(community.posts)}</div>
       <div class="profile-section-label">Your listings — click one to view it</div>
       <div class="profile-listings">${listingsHtml}</div>
       <div class="profile-section-label">Trust</div>
@@ -1448,7 +1414,20 @@ function renderProfileModal(profile, theirListings, isOwn, trust){
         </div>
       </div>
       <p class="profile-bio ${profile.bio ? '' : 'empty'}">${profile.bio ? escapeHtml(profile.bio) : 'No bio yet.'}</p>
-      ${session ? `<button class="btn btn-cyan" onclick="closeProfileModal(); messageFromListing('${profile.id}', null);">Message ${escapeHtml(profile.display_name)}</button>` : ''}
+      <div class="profile-actions-row">
+        ${session ? `<button class="btn ${community.isFollowing ? 'btn-ghost' : 'btn-amber'}" onclick="toggleFollow('${profile.id}', true)">${community.isFollowing ? 'Following' : 'Follow'}</button>` : ''}
+        ${session ? `<button class="btn btn-cyan" onclick="closeProfileModal(); messageFromListing('${profile.id}', null);">Message</button>` : ''}
+      </div>
+      <div class="profile-social-stats">
+        <span><strong>${community.followers}</strong> followers</span>
+        <span><strong>${community.following}</strong> following</span>
+        <span><strong>${community.posts.length}</strong> updates</span>
+      </div>
+      ${profile.mission ? `<div class="profile-detail-block"><span>Mission</span><p>${escapeHtml(profile.mission)}</p></div>` : ''}
+      ${profile.seeking ? `<div class="profile-detail-block"><span>Sponsorship goals</span><p>${escapeHtml(profile.seeking)}</p></div>` : ''}
+      ${profile.achievements ? `<div class="profile-detail-block"><span>Highlights</span><p>${escapeHtml(profile.achievements)}</p></div>` : ''}
+      <div class="profile-section-label">Updates</div>
+      <div class="profile-update-list">${profilePostsHtml(community.posts)}</div>
       <div class="profile-section-label">Listings — click one to view it</div>
       <div class="profile-listings">${listingsHtml}</div>
       <div class="profile-section-label">Trust</div>
@@ -1510,6 +1489,9 @@ async function saveProfile(e){
   const notify_matches = document.getElementById('pNotifyMatches').checked;
   const usernameRaw = document.getElementById('pUsername').value.trim();
   const tags = parseTagsInput(document.getElementById('pTags').value);
+  const mission = document.getElementById('pMission').value.trim();
+  const seeking = document.getElementById('pSeeking').value.trim();
+  const achievements = document.getElementById('pAchievements').value.trim();
 
   if(usernameRaw && !/^[a-zA-Z0-9_]{3,24}$/.test(usernameRaw)){
     showToast("Username should be 3–24 characters: letters, numbers, underscores only.");
@@ -1523,7 +1505,7 @@ async function saveProfile(e){
     }
   }
 
-  const payload = { display_name, bio, link, location_text, notify_matches, tags, username: usernameRaw || null, updated_at: new Date().toISOString() };
+  const payload = { display_name, bio, mission, seeking, achievements, link, location_text, notify_matches, tags, username: usernameRaw || null, updated_at: new Date().toISOString() };
   if(pendingAvatarDataUrl !== undefined) payload.avatar_url = pendingAvatarDataUrl;
   if(pendingLat != null){ payload.lat = pendingLat; payload.lng = pendingLng; }
 
@@ -2173,6 +2155,129 @@ function subscribeDealsRealtime(){
     .subscribe();
 }
 
+
+
+// ---------- community updates, follows, replies ----------
+function setCommunityFeed(mode){
+  communityFeedMode = mode;
+  document.querySelectorAll('.community-tabs button').forEach(b => b.classList.toggle('active', b.dataset.feed === mode));
+  loadCommunityFeed();
+}
+
+function focusUpdateComposer(){
+  if(!session){ openSignupWizard(); return; }
+  setView('community');
+  setTimeout(() => document.getElementById('updateBody')?.focus(), 50);
+}
+
+function renderCommunityComposer(){
+  const el = document.getElementById('communityComposer');
+  if(!el) return;
+  if(!session){
+    el.innerHTML = `<div class="signed-out-notice"><strong>Join the community</strong><p>Sign in to share progress, announcements, wins, needs, or behind-the-scenes updates.</p><button class="btn btn-amber" onclick="openSignupWizard()">Create account</button></div>`;
+    return;
+  }
+  el.innerHTML = `<div class="composer-head">${avatarHtml(myProfile, displayName(), 42)}<div><strong>Share an update as ${escapeHtml(displayName())}</strong><span>Keep sponsors and sponsees connected to what is happening.</span></div></div>
+    <textarea id="updateBody" maxlength="800" placeholder="What is happening? Share a milestone, event, need, opportunity, or thank-you…"></textarea>
+    <div class="composer-foot"><span id="updateCounter">0 / 800</span><button class="btn btn-amber" onclick="createCommunityPost()">Post update</button></div>`;
+  document.getElementById('updateBody').addEventListener('input', e => document.getElementById('updateCounter').textContent = `${e.target.value.length} / 800`);
+}
+
+async function loadMyFollowing(){
+  followingIds = new Set();
+  if(!session) return;
+  const { data } = await sb.from('follows').select('following_id').eq('follower_id', session.user.id);
+  (data || []).forEach(f => followingIds.add(f.following_id));
+}
+
+async function loadCommunityFeed(){
+  const feed = document.getElementById('communityFeed');
+  if(!feed) return;
+  feed.innerHTML = `<div class="empty-state">Loading community updates…</div>`;
+  await loadMyFollowing();
+  let query = sb.from('posts').select('*').order('created_at', { ascending:false }).limit(60);
+  if(communityFeedMode === 'following'){
+    if(!session){ feed.innerHTML = `<div class="empty-state"><strong>Sign in to see followed profiles</strong>Follow sponsors and sponsees to build your own feed.</div>`; return; }
+    const ids = [...followingIds, session.user.id];
+    if(!ids.length){ feed.innerHTML = `<div class="empty-state"><strong>Your following feed is empty</strong>Open a profile and follow entities you want to keep up with.</div>`; return; }
+    query = query.in('author_id', ids);
+  }
+  const { data, error } = await query;
+  if(error){ feed.innerHTML = `<div class="empty-state">Community updates are not enabled yet. Run the new community SQL migration in Supabase.</div>`; return; }
+  communityPosts = data || [];
+  const authorIds = [...new Set(communityPosts.map(p => p.author_id))];
+  const missing = authorIds.filter(id => !profileCache[id]);
+  if(missing.length){ const { data: ps } = await sb.from('profiles').select('*').in('id', missing); (ps || []).forEach(p => profileCache[p.id]=p); }
+  const postIds = communityPosts.map(p => p.id);
+  communityComments = {}; communityLikes = new Set();
+  if(postIds.length){
+    const [{data: comments},{data: likes}] = await Promise.all([
+      sb.from('post_comments').select('*').in('post_id', postIds).order('created_at', {ascending:true}),
+      sb.from('post_likes').select('*').in('post_id', postIds)
+    ]);
+    (comments || []).forEach(c => (communityComments[c.post_id] ||= []).push(c));
+    const commenterIds=[...new Set((comments||[]).map(c=>c.author_id))].filter(id=>!profileCache[id]);
+    if(commenterIds.length){ const {data: cps}=await sb.from('profiles').select('*').in('id',commenterIds); (cps||[]).forEach(p=>profileCache[p.id]=p); }
+    (likes || []).forEach(l => { if(session && l.user_id===session.user.id) communityLikes.add(l.post_id); });
+  }
+  renderCommunityFeed();
+}
+
+function postCardHtml(post, compact=false){
+  const author=profileCache[post.author_id] || {};
+  const comments=communityComments[post.id] || [];
+  const mine=session && post.author_id===session.user.id;
+  return `<article class="update-card ${compact?'compact':''}">
+    <div class="update-author" onclick="openProfile('${post.author_id}')">${avatarHtml(author,author.display_name,42)}<div><strong>${escapeHtml(author.display_name||'Konnekt member')}</strong><span>${author.role ? author.role.toUpperCase()+' · ' : ''}${timeAgo(post.created_at)}</span></div></div>
+    <div class="update-body">${escapeHtml(post.body).replace(/\n/g,'<br>')}</div>
+    <div class="update-actions">
+      <button class="${communityLikes.has(post.id)?'active':''}" onclick="togglePostLike('${post.id}')">♥ ${post.like_count||0}</button>
+      <button onclick="toggleReplies('${post.id}')">Reply ${comments.length?`(${comments.length})`:''}</button>
+      ${mine?`<button class="danger-link" onclick="deleteCommunityPost('${post.id}')">Delete</button>`:''}
+    </div>
+    <div class="reply-area" id="replies-${post.id}" style="display:${compact?'none':'none'};">
+      <div class="reply-list">${comments.map(commentHtml).join('') || '<span class="reply-empty">No replies yet.</span>'}</div>
+      ${session?`<div class="reply-compose"><input type="text" id="reply-${post.id}" maxlength="400" placeholder="Write a reply…" onkeydown="if(event.key==='Enter') createReply('${post.id}')"><button onclick="createReply('${post.id}')">Reply</button></div>`:''}
+    </div>
+  </article>`;
+}
+function commentHtml(c){ const a=profileCache[c.author_id]||{}; return `<div class="reply-item"><strong onclick="openProfile('${c.author_id}')">${escapeHtml(a.display_name||'Member')}</strong><span>${escapeHtml(c.body)}</span><small>${timeAgo(c.created_at)}</small></div>`; }
+function renderCommunityFeed(){ const el=document.getElementById('communityFeed'); if(!el)return; el.innerHTML=communityPosts.length?communityPosts.map(p=>postCardHtml(p)).join(''):`<div class="empty-state"><strong>No updates here yet</strong>Be the first to share what your organization, project, or sponsorship is doing.</div>`; }
+function profilePostsHtml(posts){ return posts.length ? posts.slice(0,12).map(p=>postCardHtml(p,true)).join('') : `<p class="modal-note">No updates posted yet.</p>`; }
+
+async function createCommunityPost(){
+  if(!session){ openAuthModal(); return; }
+  const input=document.getElementById('updateBody'); const body=input?.value.trim();
+  if(!body){ showToast('Write something before posting.'); return; }
+  const {error}=await sb.from('posts').insert({author_id:session.user.id,body});
+  if(error){ showToast("Couldn't post — "+error.message); return; }
+  input.value=''; document.getElementById('updateCounter').textContent='0 / 800'; showToast('Update posted.'); await loadCommunityFeed();
+}
+async function deleteCommunityPost(id){ if(!confirm('Delete this update?'))return; const {error}=await sb.from('posts').delete().eq('id',id).eq('author_id',session.user.id); if(error)showToast(error.message); else {showToast('Update deleted.');loadCommunityFeed();} }
+function toggleReplies(id){ const el=document.getElementById('replies-'+id); if(el)el.style.display=el.style.display==='none'?'':'none'; }
+async function createReply(postId){ const input=document.getElementById('reply-'+postId); const body=input?.value.trim(); if(!body)return; const {error}=await sb.from('post_comments').insert({post_id:postId,author_id:session.user.id,body}); if(error)showToast("Couldn't reply — "+error.message); else await loadCommunityFeed(); }
+async function togglePostLike(postId){ if(!session){openAuthModal();return;} if(communityLikes.has(postId)) await sb.from('post_likes').delete().eq('post_id',postId).eq('user_id',session.user.id); else await sb.from('post_likes').insert({post_id:postId,user_id:session.user.id}); await loadCommunityFeed(); }
+async function toggleFollow(userId, reopen=false){
+  if(!session){openAuthModal();return;} if(userId===session.user.id)return;
+  if(followingIds.has(userId)){ await sb.from('follows').delete().eq('follower_id',session.user.id).eq('following_id',userId); showToast('Unfollowed.'); }
+  else { const {error}=await sb.from('follows').insert({follower_id:session.user.id,following_id:userId}); if(error){showToast(error.message);return;} showToast('Following. Their updates will appear in your feed.'); }
+  await loadMyFollowing(); if(reopen)openProfile(userId); else loadCommunityFeed();
+}
+async function loadProfileCommunityInfo(userId){
+  const [{count:followers},{count:following},{data:posts},{data:followRow}] = await Promise.all([
+    sb.from('follows').select('follower_id',{count:'exact',head:true}).eq('following_id',userId),
+    sb.from('follows').select('following_id',{count:'exact',head:true}).eq('follower_id',userId),
+    sb.from('posts').select('*').eq('author_id',userId).order('created_at',{ascending:false}).limit(20),
+    session && userId!==session.user.id ? sb.from('follows').select('following_id').eq('follower_id',session.user.id).eq('following_id',userId).maybeSingle() : Promise.resolve({data:null})
+  ]);
+  const ps=posts||[]; const ids=ps.map(p=>p.id); if(ids.length){ const {data:cs}=await sb.from('post_comments').select('*').in('post_id',ids); (cs||[]).forEach(c=>(communityComments[c.post_id]||=[]).push(c)); }
+  return {followers:followers||0,following:following||0,posts:ps,isFollowing:!!followRow};
+}
+
+function subscribeCommunityRealtime(){
+  sb.channel('community-changes').on('postgres_changes',{event:'*',schema:'public',table:'posts'},()=>{ if(document.getElementById('communitySection')?.style.display!=='none')loadCommunityFeed(); }).on('postgres_changes',{event:'*',schema:'public',table:'post_comments'},()=>{ if(document.getElementById('communitySection')?.style.display!=='none')loadCommunityFeed(); }).subscribe();
+}
+
 // ---------- init ----------
 async function init(){
   const { data } = await sb.auth.getSession();
@@ -2208,14 +2313,9 @@ async function init(){
     await loadMyReviews();
   }
 
-  openSharedSignalFromUrl();
-  window.addEventListener('popstate', () => {
-    const id = new URLSearchParams(window.location.search).get('signal');
-    if(id) openListingDetail(id, false);
-    else closeListingModal(false);
-  });
   subscribeMessagesRealtime();
   subscribeDealsRealtime();
+  subscribeCommunityRealtime();
 }
 
 init();
