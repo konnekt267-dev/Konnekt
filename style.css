@@ -482,5 +482,20 @@ footer{border-top:1px solid var(--border);padding:28px 0 40px;color:var(--text-f
 .deal-step.done span{border-color:var(--success);background:var(--success-soft);}
 .deal-progress-line{height:2px;min-width:28px;flex:1;background:var(--border);margin-bottom:20px;}
 .deal-progress-line.done{background:var(--success);}
-.payment-state{display:inline-flex;align-items:center;gap:5px;margin-top:10px;padding:6px 9px;border-radius:999px;background:var(--amber-soft);color:var(--amber);font-size:11.5px;font-weight:600;}
-.payment-state.paid{background:var(--success-soft);color:var(--success);}
+
+/* Viral sharing loop */
+.btn-share{
+  border:1px solid var(--border);
+  background:var(--surface-2);
+  color:var(--text);
+  border-radius:8px;
+  padding:8px 11px;
+  font:600 12px 'Space Grotesk',sans-serif;
+  cursor:pointer;
+  transition:transform .15s,border-color .15s,background .15s;
+}
+.btn-share:hover{
+  transform:translateY(-1px);
+  border-color:var(--cyan);
+  background:var(--cyan-soft);
+}
