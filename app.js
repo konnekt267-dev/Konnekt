@@ -41,6 +41,9 @@ let communityFeedMode = 'discover';
 let pendingPostImage = null;
 let replySubmitting = new Set();
 let postSubmitting = false;
+let savedListingIds = new Set();
+let showSavedOnly = false;
+let notifications = [];
 let openReplyParent = {};
 const POST_IMAGE_MAX_BYTES = 700 * 1024;
 const POST_IMAGE_MAX_DIMENSION = 1600;
@@ -502,12 +505,14 @@ function renderAccountArea(){
   if(session){
     const name = displayName();
     area.innerHTML = `
+      <button class="notification-button" onclick="openNotifications()" aria-label="Notifications">🔔<span class="nav-badge notification-badge" id="notificationBadge" style="display:none;"></span></button>
       <div class="account-chip">
         <span class="avatar">${myProfile && myProfile.avatar_url ? `<img src="${myProfile.avatar_url}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">` : initials(name)}</span>
         ${escapeHtml(name)}
         <button class="link-btn" onclick="openProfile('${session.user.id}')">My profile</button>
         <button class="link-btn" onclick="signOut()">Sign out</button>
       </div>`;
+    updateNotificationBadge();
   } else {
     area.innerHTML = `
       <button class="btn btn-ghost" onclick="openAuthModal()">Sign in</button>
@@ -970,6 +975,7 @@ function renderBoard(){
 
   const items = listings
     .filter(l => l.type === boardType)
+    .filter(l => !showSavedOnly || savedListingIds.has(l.id))
     .filter(l => !cat || l.category === cat)
     .filter(l => !q || (l.name+" "+l.tagline+" "+l.description+" "+(l.tags||[]).join(" ")).toLowerCase().includes(q));
 
@@ -977,8 +983,8 @@ function renderBoard(){
 
   if(items.length === 0){
     grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1">
-      <strong>No ${boardType === 'team' ? 'teams' : 'sponsors'} on this frequency yet</strong>
-      Be the first to post one — it takes about a minute.
+      <strong>${showSavedOnly ? 'No saved signals here yet' : `No ${boardType === 'team' ? 'sponsees' : 'sponsors'} on this frequency yet`}</strong>
+      ${showSavedOnly ? 'Save promising opportunities from the board and they will appear here.' : 'Be the first to post one — it takes about a minute.'}
     </div>`;
     return;
   }
@@ -1017,6 +1023,7 @@ function renderBoard(){
       <div class="card-side">
         ${matchRingHtml(pct)}
         <div class="card-side-actions">
+          ${session && !isOwner ? `<button class="btn-save ${savedListingIds.has(l.id) ? 'saved' : ''}" onclick="toggleSaveListing('${l.id}')">${savedListingIds.has(l.id) ? '★ Saved' : '☆ Save'}</button>` : ''}
           ${!isOwner ? `<button class="btn-connect" onclick="messageFromListing('${l.user_id}','${l.id}')">Connect</button>` : ''}
           ${canProposeDeal ? `<button class="btn-offer" onclick="openProposeDeal('${l.id}')">Make an offer</button>` : ''}
         </div>
@@ -1025,6 +1032,111 @@ function renderBoard(){
       </div>
     </div>`;
   }).join('');
+}
+
+
+async function loadSavedListings(){
+  savedListingIds = new Set();
+  if(!session) return;
+  const { data, error } = await sb.from('saved_listings').select('listing_id').eq('user_id', session.user.id);
+  if(!error) savedListingIds = new Set((data || []).map(x => x.listing_id));
+}
+
+async function toggleSaveListing(listingId){
+  if(!session){ openSignupWizard(); return; }
+  if(savedListingIds.has(listingId)){
+    const { error } = await sb.from('saved_listings').delete().eq('user_id', session.user.id).eq('listing_id', listingId);
+    if(error){ showToast("Couldn't remove saved signal — " + error.message); return; }
+    savedListingIds.delete(listingId);
+    showToast('Removed from saved signals.');
+  } else {
+    const { error } = await sb.from('saved_listings').insert({ user_id: session.user.id, listing_id: listingId });
+    if(error){ showToast("Couldn't save signal — " + error.message); return; }
+    savedListingIds.add(listingId);
+    showToast('Signal saved.');
+  }
+  renderBoard();
+}
+
+function toggleSavedOnly(){
+  if(!session){ openSignupWizard(); return; }
+  showSavedOnly = !showSavedOnly;
+  const btn = document.getElementById('savedFilterBtn');
+  if(btn){ btn.classList.toggle('active', showSavedOnly); btn.textContent = showSavedOnly ? '★ Saved only' : '☆ Saved'; }
+  renderBoard();
+}
+
+async function loadNotifications(){
+  notifications = [];
+  if(!session) return;
+  const { data, error } = await sb.from('notifications').select('*').eq('user_id', session.user.id).order('created_at', { ascending:false }).limit(50);
+  if(error) return;
+  notifications = data || [];
+  const actorIds = [...new Set(notifications.map(n => n.actor_id).filter(Boolean))].filter(id => !profileCache[id]);
+  if(actorIds.length){
+    const { data: actors } = await sb.from('profiles').select('*').in('id', actorIds);
+    (actors || []).forEach(x => profileCache[x.id] = x);
+  }
+  updateNotificationBadge();
+  if(document.getElementById('notificationsOverlay')?.classList.contains('open')) renderNotifications();
+}
+
+function updateNotificationBadge(){
+  const badge = document.getElementById('notificationBadge');
+  if(!badge) return;
+  const unread = notifications.filter(n => !n.read_at).length;
+  badge.style.display = unread ? '' : 'none';
+  badge.textContent = unread > 99 ? '99+' : unread;
+}
+
+function notificationText(n){
+  const actor = profileCache[n.actor_id]?.display_name || 'Someone';
+  if(n.kind === 'follow') return `${actor} followed your profile.`;
+  if(n.kind === 'like') return `${actor} liked your update.`;
+  if(n.kind === 'comment') return `${actor} replied to your update.`;
+  if(n.kind === 'comment_reply') return `${actor} replied to your reply.`;
+  return n.message || 'You have a new notification.';
+}
+
+function openNotifications(){
+  document.getElementById('notificationsOverlay').classList.add('open');
+  renderNotifications();
+}
+function closeNotifications(){ document.getElementById('notificationsOverlay').classList.remove('open'); }
+function renderNotifications(){
+  const el = document.getElementById('notificationsList');
+  if(!el) return;
+  el.innerHTML = notifications.length ? notifications.map(n => `
+    <button class="notification-item ${n.read_at ? '' : 'unread'}" onclick="openNotification('${n.id}')">
+      <span class="notification-avatar">${avatarHtml(profileCache[n.actor_id], profileCache[n.actor_id]?.display_name, 38)}</span>
+      <span><strong>${escapeHtml(notificationText(n))}</strong><small>${timeAgo(n.created_at)}</small></span>
+    </button>`).join('') : `<div class="empty-state"><strong>You're all caught up</strong>Follows, likes, and replies will show up here.</div>`;
+}
+async function openNotification(id){
+  const n = notifications.find(x => x.id === id); if(!n) return;
+  if(!n.read_at){
+    await sb.from('notifications').update({read_at:new Date().toISOString()}).eq('id', id).eq('user_id', session.user.id);
+    n.read_at = new Date().toISOString(); updateNotificationBadge();
+  }
+  closeNotifications();
+  if(n.post_id){ setView('community'); await loadCommunityFeed(); setTimeout(()=>document.getElementById('post-'+n.post_id)?.scrollIntoView({behavior:'smooth',block:'center'}),120); }
+  else if(n.actor_id) openProfile(n.actor_id);
+}
+async function markAllNotificationsRead(){
+  if(!session) return;
+  await sb.from('notifications').update({read_at:new Date().toISOString()}).eq('user_id',session.user.id).is('read_at',null);
+  notifications.forEach(n => n.read_at = n.read_at || new Date().toISOString());
+  updateNotificationBadge(); renderNotifications();
+}
+
+function profileCompletion(profile){
+  const checks = [profile.display_name, profile.avatar_url, profile.entity_type, profile.headline, profile.bio, profile.mission, profile.seeking, profile.partnership_types, profile.audience, profile.achievements, profile.location_text, profile.link, profile.tags?.length];
+  const done = checks.filter(Boolean).length;
+  return Math.round(done / checks.length * 100);
+}
+function profileCompletionHtml(profile){
+  const pct = profileCompletion(profile);
+  return `<div class="profile-completion"><div><strong>${pct}% sponsor-ready</strong><span>${pct < 100 ? 'Complete more fields to build trust and improve discovery.' : 'Your profile is ready to make a strong impression.'}</span></div><div class="completion-track"><span style="width:${pct}%"></span></div></div>`;
 }
 
 async function submitListing(e){
@@ -1348,6 +1460,7 @@ function renderProfileModal(profile, theirListings, isOwn, trust, community){
             <span><strong>${community.posts.length}</strong>Updates</span>
             <span><strong>${trust.completedCount}</strong>Deals</span>
           </div>
+          ${profileCompletionHtml(profile)}
         </aside>
         <div class="profile-edit-main">
           <form onsubmit="saveProfile(event)" class="profile-edit-form">
@@ -2202,7 +2315,7 @@ function commentTreeHtml(postId,comments,parentId=null,depth=0){
 }
 function postCardHtml(post,compact=false){
   const author=profileCache[post.author_id]||{}; const comments=communityComments[post.id]||[]; const mine=session&&post.author_id===session.user.id;
-  return `<article class="update-card ${compact?'compact':''}"><div class="update-author" onclick="openProfile('${post.author_id}')">${avatarHtml(author,author.display_name,42)}<div><strong>${escapeHtml(author.display_name||'Konnekt member')}</strong><span>${author.entity_type?escapeHtml(author.entity_type)+' · ':author.role?author.role.toUpperCase()+' · ':''}${timeAgo(post.created_at)}</span></div></div><div class="update-body">${escapeHtml(post.body).replace(/\n/g,'<br>')}</div>${post.image_url?`<button class="post-image-button" onclick="openImageLightbox('${escapeHtml(post.image_url)}')"><img class="post-image" src="${escapeHtml(post.image_url)}" alt="Image shared with this update" loading="lazy"></button>`:''}<div class="update-actions"><button class="${communityLikes.has(post.id)?'active':''}" onclick="togglePostLike('${post.id}')">♥ ${post.like_count||0}</button><button onclick="toggleReplies('${post.id}')">Reply ${comments.length?`(${comments.length})`:''}</button>${mine?`<button class="danger-link" onclick="deleteCommunityPost('${post.id}')">Delete</button>`:''}</div><div class="reply-area" id="replies-${post.id}" style="display:none"><div class="reply-list">${commentTreeHtml(post.id,comments)||'<span class="reply-empty">No replies yet.</span>'}</div>${session?`<div class="reply-compose"><input type="text" id="reply-${post.id}" maxlength="400" placeholder="Write a reply…" onkeydown="handleReplyKey(event,'${post.id}',null)"><button id="reply-btn-${post.id}" onclick="createReply('${post.id}',null)">Reply</button></div>`:''}</div></article>`;
+  return `<article class="update-card ${compact?'compact':''}" id="post-${post.id}"><div class="update-author" onclick="openProfile('${post.author_id}')">${avatarHtml(author,author.display_name,42)}<div><strong>${escapeHtml(author.display_name||'Konnekt member')}</strong><span>${author.entity_type?escapeHtml(author.entity_type)+' · ':author.role?author.role.toUpperCase()+' · ':''}${timeAgo(post.created_at)}</span></div></div><div class="update-body">${escapeHtml(post.body).replace(/\n/g,'<br>')}</div>${post.image_url?`<button class="post-image-button" onclick="openImageLightbox('${escapeHtml(post.image_url)}')"><img class="post-image" src="${escapeHtml(post.image_url)}" alt="Image shared with this update" loading="lazy"></button>`:''}<div class="update-actions"><button class="${communityLikes.has(post.id)?'active':''}" onclick="togglePostLike('${post.id}')">♥ ${post.like_count||0}</button><button onclick="toggleReplies('${post.id}')">Reply ${comments.length?`(${comments.length})`:''}</button>${mine?`<button class="danger-link" onclick="deleteCommunityPost('${post.id}')">Delete</button>`:''}</div><div class="reply-area" id="replies-${post.id}" style="display:none"><div class="reply-list">${commentTreeHtml(post.id,comments)||'<span class="reply-empty">No replies yet.</span>'}</div>${session?`<div class="reply-compose"><input type="text" id="reply-${post.id}" maxlength="400" placeholder="Write a reply…" onkeydown="handleReplyKey(event,'${post.id}',null)"><button id="reply-btn-${post.id}" onclick="createReply('${post.id}',null)">Reply</button></div>`:''}</div></article>`;
 }
 function renderCommunityFeed(){const el=document.getElementById('communityFeed');if(!el)return;el.innerHTML=communityPosts.length?communityPosts.map(p=>postCardHtml(p)).join(''):`<div class="empty-state"><strong>No updates here yet</strong>Be the first to share what your organization, project, or sponsorship is doing.</div>`;}
 function profilePostsHtml(posts){return posts.length?posts.slice(0,12).map(p=>postCardHtml(p,true)).join(''):`<p class="modal-note">No updates posted yet.</p>`;}
@@ -2232,6 +2345,14 @@ async function loadProfileCommunityInfo(userId){
 }
 function subscribeCommunityRealtime(){sb.channel('community-changes').on('postgres_changes',{event:'*',schema:'public',table:'posts'},()=>{if(document.getElementById('communitySection')?.style.display!=='none')loadCommunityFeed();}).on('postgres_changes',{event:'*',schema:'public',table:'post_comments'},()=>{if(document.getElementById('communitySection')?.style.display!=='none')loadCommunityFeed();}).subscribe();}
 
+
+function subscribeNotificationsRealtime(){
+  if(!session) return;
+  sb.channel('my-notifications')
+    .on('postgres_changes', { event:'INSERT', schema:'public', table:'notifications', filter:`user_id=eq.${session.user.id}` }, () => loadNotifications())
+    .subscribe();
+}
+
 // ---------- init ----------
 async function init(){
   const { data } = await sb.auth.getSession();
@@ -2242,6 +2363,7 @@ async function init(){
   sb.auth.onAuthStateChange(async (event, newSession) => {
     const wasSignedIn = !!session;
     session = newSession;
+    if(!session){ savedListingIds = new Set(); notifications = []; showSavedOnly = false; }
     if(event === 'PASSWORD_RECOVERY'){
       document.getElementById('resetPasswordOverlay').classList.add('open');
     }
@@ -2250,6 +2372,9 @@ async function init(){
       await loadMessages();
       await loadDeals();
       await loadMyReviews();
+      await loadSavedListings();
+      await loadNotifications();
+      subscribeNotificationsRealtime();
     }
     renderAccountArea();
     renderBoard();
@@ -2265,11 +2390,14 @@ async function init(){
     await loadMessages();
     await loadDeals();
     await loadMyReviews();
+    await loadSavedListings();
+    await loadNotifications();
   }
 
   subscribeMessagesRealtime();
   subscribeDealsRealtime();
   subscribeCommunityRealtime();
+  subscribeNotificationsRealtime();
 }
 
 init();
