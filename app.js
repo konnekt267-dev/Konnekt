@@ -110,7 +110,7 @@ function tagPickerHtml(key, label, hint){
       <label>${label}</label>
       <div class="tag-picker" id="${key}Picker">
         <div class="tag-chips" id="${key}Chips"></div>
-        <input type="text" id="${key}Search" placeholder="Type to search tags…" autocomplete="off"
+        <input type="text" id="${key}Search" placeholder="Type to search tags…" autocomplete="on"
           oninput="handleTagPickerInput('${key}')"
           onfocus="handleTagPickerInput('${key}')"
           onblur="hideTagSuggestions('${key}')">
@@ -720,7 +720,7 @@ function renderWizardStepBody(key){
         <div class="location-row">
           <div class="autocomplete-wrap">
             <input type="text" id="wLocation" value="${escapeHtml(wizard.location_text)}" placeholder="Start typing an address or city…"
-              autocomplete="off"
+              autocomplete="on"
               oninput="handleLocationInput('wLocation','wLocationSuggestions')"
               onblur="hideLocationSuggestions('wLocationSuggestions')">
             <div class="autocomplete-list" id="wLocationSuggestions"></div>
