@@ -48,6 +48,9 @@ let notifications = [];
 let openReplyParent = {};
 const POST_IMAGE_MAX_BYTES = 700 * 1024;
 const POST_IMAGE_MAX_DIMENSION = 1600;
+const SIGNAL_DRAFT_KEY = 'konnekt_signal_draft_v1';
+const UPDATE_DRAFT_KEY = 'konnekt_update_draft_v1';
+const RECENTLY_VIEWED_KEY = 'konnekt_recently_viewed_v1';
 
 let messages = [];             // all messages involving me
 let activeThreadUserId = null; // other user id of the open thread
@@ -57,6 +60,106 @@ let offerKind = 'money';           // current post form offer kind: money | othe
 let pendingLat = null, pendingLng = null;      // captured via geolocation, not yet saved
 let pendingAvatarDataUrl = undefined;          // undefined = no change, null = remove, string = new image
 let pendingMessageImage = null;                // data URL of an image attached to the message draft, if any
+
+
+
+// ---------- local polish: draft recovery, recently viewed, sharing ----------
+function safeJsonParse(value, fallback){
+  try { return JSON.parse(value); } catch { return fallback; }
+}
+function signalDraftData(){
+  const form = document.getElementById('postForm');
+  if(!form || editingListingId) return null;
+  return {
+    postType,
+    offerKind,
+    name: document.getElementById('fName')?.value || '',
+    category: document.getElementById('fCategory')?.value || '',
+    tagline: document.getElementById('fTagline')?.value || '',
+    description: document.getElementById('fDesc')?.value || '',
+    budgetMin: document.getElementById('fBudgetMin')?.value || '',
+    budgetMax: document.getElementById('fBudgetMax')?.value || '',
+    offerDetails: document.getElementById('fOfferDetails')?.value || '',
+    isVirtual: !!document.getElementById('fVirtual')?.checked,
+    tags: tagPickerState.fTags || [],
+    savedAt: Date.now()
+  };
+}
+function saveSignalDraft(){
+  const draft = signalDraftData();
+  if(!draft) return;
+  const hasContent = draft.name || draft.tagline || draft.description || draft.offerDetails || draft.tags.length;
+  if(hasContent) localStorage.setItem(SIGNAL_DRAFT_KEY, JSON.stringify(draft));
+}
+function restoreSignalDraft(){
+  if(editingListingId) return;
+  const draft = safeJsonParse(localStorage.getItem(SIGNAL_DRAFT_KEY), null);
+  if(!draft || Date.now() - Number(draft.savedAt || 0) > 14 * 86400000) return;
+  setPostType(draft.postType || postType);
+  if(draft.postType === 'sponsor') setOfferKind(draft.offerKind || 'money');
+  const values = {fName:draft.name,fTagline:draft.tagline,fDesc:draft.description,fBudgetMin:draft.budgetMin,fBudgetMax:draft.budgetMax,fOfferDetails:draft.offerDetails};
+  Object.entries(values).forEach(([id,v]) => { const el=document.getElementById(id); if(el && v != null) el.value=v; });
+  if(draft.category && [...document.getElementById('fCategory').options].some(o=>o.value===draft.category)) document.getElementById('fCategory').value=draft.category;
+  if(document.getElementById('fVirtual')) document.getElementById('fVirtual').checked=!!draft.isVirtual;
+  initTagPicker('fTags', draft.tags || []);
+  showToast('Recovered your unfinished signal draft.');
+}
+function clearSignalDraft(){ localStorage.removeItem(SIGNAL_DRAFT_KEY); }
+function bindSignalDraftAutosave(){
+  const form=document.getElementById('postForm');
+  if(!form || form.dataset.autosaveBound) return;
+  form.dataset.autosaveBound='1';
+  let timer;
+  form.addEventListener('input',()=>{ clearTimeout(timer); timer=setTimeout(saveSignalDraft,250); });
+  form.addEventListener('change',saveSignalDraft);
+}
+function saveUpdateDraft(value){
+  const text=(value || '').trim();
+  if(text) localStorage.setItem(UPDATE_DRAFT_KEY, JSON.stringify({text,savedAt:Date.now()}));
+  else localStorage.removeItem(UPDATE_DRAFT_KEY);
+}
+function recentlyViewedIds(){ return safeJsonParse(localStorage.getItem(RECENTLY_VIEWED_KEY), []); }
+function addRecentlyViewed(id){
+  const ids=[id, ...recentlyViewedIds().filter(x=>x!==id)].slice(0,5);
+  localStorage.setItem(RECENTLY_VIEWED_KEY, JSON.stringify(ids));
+  renderRecentlyViewed();
+}
+function clearRecentlyViewed(){ localStorage.removeItem(RECENTLY_VIEWED_KEY); renderRecentlyViewed(); }
+function renderRecentlyViewed(){
+  const section=document.getElementById('recentlyViewedSection');
+  const row=document.getElementById('recentlyViewedRow');
+  if(!section || !row) return;
+  const items=recentlyViewedIds().map(id=>listings.find(l=>l.id===id)).filter(Boolean);
+  section.style.display=items.length ? '' : 'none';
+  row.innerHTML=items.map(l=>`<button class="recent-card" onclick="openListingDetail('${l.id}')"><span class="badge ${l.type}">${l.type==='team'?'SPONSEE':'SPONSOR'}</span><strong>${escapeHtml(l.name)}</strong><small>${escapeHtml(l.tagline)}</small></button>`).join('');
+}
+async function shareSignal(id){
+  const listing=listings.find(l=>l.id===id);
+  if(!listing) return;
+  const url=new URL(location.href); url.searchParams.set('signal',id); url.searchParams.delete('profile');
+  const payload={title:`${listing.name} on Konnekt`,text:`${listing.tagline}\n\nExplore this ${listing.type==='team'?'sponsee':'sponsorship'} signal on Konnekt.`,url:url.toString()};
+  try { if(navigator.share) await navigator.share(payload); else { await navigator.clipboard.writeText(`${payload.text}\n${payload.url}`); showToast('Signal link copied.'); } } catch(err){ if(err?.name!=='AbortError') showToast("Couldn't share this signal."); }
+}
+async function shareProfile(userId){
+  const profile=profileCache[userId];
+  const url=new URL(location.href); url.searchParams.set('profile',userId); url.searchParams.delete('signal');
+  const payload={title:`${profile?.display_name || 'Konnekt profile'} on Konnekt`,text:`View ${profile?.display_name || 'this profile'} on Konnekt.`,url:url.toString()};
+  try { if(navigator.share) await navigator.share(payload); else { await navigator.clipboard.writeText(payload.url); showToast('Profile link copied.'); } } catch(err){ if(err?.name!=='AbortError') showToast("Couldn't share this profile."); }
+}
+function handleDeepLinks(){
+  const params=new URLSearchParams(location.search);
+  const profileId=params.get('profile');
+  const signalId=params.get('signal');
+  if(profileId) setTimeout(()=>openProfile(profileId),250);
+  else if(signalId) setTimeout(()=>openListingDetail(signalId),250);
+}
+function setupGlobalPolish(){
+  bindSignalDraftAutosave();
+  window.addEventListener('scroll',()=>document.getElementById('backToTop')?.classList.toggle('show',window.scrollY>700),{passive:true});
+  document.addEventListener('keydown',e=>{
+    if(e.key==='Escape') document.querySelectorAll('.modal-overlay.open').forEach(el=>el.classList.remove('open'));
+  });
+}
 
 // ---------- helpers ----------
 function freq(id){
@@ -391,15 +494,18 @@ function matchRingHtml(pct){
 
 // ---------- view/nav ----------
 function setView(view){
+  window.scrollTo({top:0,behavior:'smooth'});
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active', b.dataset.view===view));
   document.getElementById('boardSection').style.display = view==='board' ? '' : 'none';
   document.getElementById('communitySection').style.display = view==='community' ? '' : 'none';
+  document.getElementById('networkSection').style.display = view==='network' ? '' : 'none';
   document.getElementById('postPanel').classList.toggle('open', view==='post');
   document.getElementById('messagesPanel').classList.toggle('open', view==='messages');
   document.getElementById('dealsPanel').classList.toggle('open', view==='deals');
   if(view==='board') renderBoard();
   if(view==='community'){ renderCommunityComposer(); loadCommunityFeed(); }
-  if(view==='post') refreshPostGate();
+  if(view==='network') loadNetworkGraph();
+  if(view==='post'){ refreshPostGate(); setTimeout(()=>{ bindSignalDraftAutosave(); restoreSignalDraft(); },40); }
   if(view==='messages') refreshMessagesGate();
   if(view==='deals') refreshDealsGate();
 }
@@ -1004,6 +1110,7 @@ function renderBoard(){
   if(resultCount) resultCount.textContent = `${items.length} result${items.length===1?'':'s'}`;
   updateCounts();
   updateProfessionalStats();
+  renderRecentlyViewed();
 
   if(items.length === 0){
     grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1">
@@ -1051,7 +1158,8 @@ function renderBoard(){
           ${!isOwner ? `<button class="btn-connect" onclick="messageFromListing('${l.user_id}','${l.id}')">Connect</button>` : ''}
           ${canProposeDeal ? `<button class="btn-offer" onclick="openProposeDeal('${l.id}')">Make an offer</button>` : ''}
         </div>
-        ${isOwner ? `<button class="btn btn-ghost btn-small" onclick="openEditListing('${l.id}')">Edit</button>` : ''}
+        <button class="btn btn-ghost btn-small" onclick="shareSignal('${l.id}')">Share</button>
+      ${isOwner ? `<button class="btn btn-ghost btn-small" onclick="openEditListing('${l.id}')">Edit</button>` : ''}
         ${isOwner ? `<button class="del-btn" onclick="deleteListing('${l.id}')">Remove</button>` : ''}
       </div>
     </div>`;
@@ -1219,6 +1327,7 @@ async function submitListing(e){
     return;
   }
 
+  clearSignalDraft();
   document.getElementById('postForm').reset();
   offerKind = 'money';
   editingListingId = null;
@@ -1256,6 +1365,7 @@ function openEditListing(id){
 
 function cancelEditListing(){
   editingListingId = null;
+  clearSignalDraft();
   document.getElementById('postForm').reset();
   offerKind = 'money';
   initTagPicker('fTags', []);
@@ -1276,6 +1386,7 @@ async function deleteListing(id){
 // ---------- listing detail modal ----------
 function openListingDetail(id){
   const l = listings.find(x => x.id === id);
+  if(l) addRecentlyViewed(id);
   if(!l) return;
   const poster = profileCache[l.user_id];
   const isOwner = session && session.user.id === l.user_id;
@@ -1303,6 +1414,7 @@ function openListingDetail(id){
     <div class="card-actions" style="margin-top:14px;">
       ${!isOwner ? `<button class="btn-connect" onclick="closeListingModal(); messageFromListing('${l.user_id}','${l.id}')">Connect</button>` : ''}
       ${canProposeDeal ? `<button class="btn-offer" onclick="openProposeDeal('${l.id}')">Make an offer</button>` : ''}
+      <button class="btn btn-ghost btn-small" onclick="shareSignal('${l.id}')">Share</button>
       ${isOwner ? `<button class="btn btn-ghost btn-small" onclick="openEditListing('${l.id}')">Edit</button>` : ''}
       ${isOwner ? `<button class="del-btn" onclick="closeListingModal(); deleteListing('${l.id}')">Remove</button>` : ''}
     </div>
@@ -1524,7 +1636,7 @@ function renderProfileModal(profile, theirListings, isOwn, trust, community){
           <div class="profile-identity-line"><div><h2>${escapeHtml(profile.display_name || 'Konnekt entity')}</h2>${profile.username ? `<div class="profile-handle">@${escapeHtml(profile.username)}</div>` : ''}</div>${(profile.role || profile.verified) ? `<div class="profile-role-row">${roleBadgeHtml(profile.role)} ${verifiedBadgeHtml(profile.verified)}</div>` : ''}</div>
           ${profile.headline ? `<p class="profile-headline">${escapeHtml(profile.headline)}</p>` : ''}
           <div class="profile-meta-row">${profile.entity_type ? `<span>${escapeHtml(profile.entity_type)}</span>` : ''}${profile.location_text ? `<span>📍 ${escapeHtml(profile.location_text)}</span>` : ''}${profile.link ? `<a href="${escapeHtml(profile.link)}" target="_blank" rel="noopener">Visit website ↗</a>` : ''}</div>
-          <div class="profile-actions-row">${session ? `<button class="btn ${community.isFollowing ? 'btn-ghost' : 'btn-amber'}" onclick="toggleFollow('${profile.id}', true)">${community.isFollowing ? 'Following' : 'Follow'}</button><button class="btn btn-cyan" onclick="closeProfileModal(); messageFromListing('${profile.id}', null);">Message</button>` : ''}</div>
+          <div class="profile-actions-row"><button class="btn btn-ghost" onclick="shareProfile('${profile.id}')">Share profile</button>${session ? `<button class="btn ${community.isFollowing ? 'btn-ghost' : 'btn-amber'}" onclick="toggleFollow('${profile.id}', true)">${community.isFollowing ? 'Following' : 'Follow'}</button><button class="btn btn-cyan" onclick="closeProfileModal(); messageFromListing('${profile.id}', null);">Message</button>` : ''}</div>
         </div>
       </div>
       <div class="profile-social-stats profile-social-stats-grid public"><span><strong>${community.followers}</strong>Followers</span><span><strong>${community.following}</strong>Following</span><span><strong>${community.posts.length}</strong>Updates</span><span><strong>${trust.completedCount}</strong>Completed deals</span></div>
@@ -2285,7 +2397,10 @@ function renderCommunityComposer(){
     <textarea id="updateBody" maxlength="800" placeholder="What is happening?"></textarea>
     <div id="postImagePreview" class="post-image-preview" style="display:none"></div>
     <div class="composer-foot"><div class="composer-tools"><label class="btn btn-ghost btn-small file-btn">📷 Add image<input type="file" accept="image/jpeg,image/png,image/webp" onchange="handlePostImage(event)" style="display:none"></label><span id="updateCounter">0 / 800</span></div><button id="postUpdateBtn" class="btn btn-amber" onclick="createCommunityPost()">Post update</button></div>`;
-  document.getElementById('updateBody').addEventListener('input',e=>document.getElementById('updateCounter').textContent=`${e.target.value.length} / 800`);
+  const updateBody=document.getElementById('updateBody');
+  const saved=safeJsonParse(localStorage.getItem(UPDATE_DRAFT_KEY),null);
+  if(saved?.text && Date.now()-Number(saved.savedAt||0)<14*86400000){ updateBody.value=saved.text; document.getElementById('updateCounter').textContent=`${saved.text.length} / 800`; }
+  updateBody.addEventListener('input',e=>{ document.getElementById('updateCounter').textContent=`${e.target.value.length} / 800`; saveUpdateDraft(e.target.value); });
 }
 async function compressImageFile(file,maxBytes=POST_IMAGE_MAX_BYTES,maxDimension=POST_IMAGE_MAX_DIMENSION){
   if(!file.type.startsWith('image/')) throw new Error('Choose an image file.');
@@ -2346,7 +2461,7 @@ function profilePostsHtml(posts){return posts.length?posts.slice(0,12).map(p=>po
 async function createCommunityPost(){
   if(!session){openAuthModal();return;} if(postSubmitting)return; const input=document.getElementById('updateBody'); const body=input?.value.trim(); if(!body&&!pendingPostImage){showToast('Write something or add an image before posting.');return;}
   postSubmitting=true; const btn=document.getElementById('postUpdateBtn'); if(btn){btn.disabled=true;btn.textContent='Posting…';}
-  try{let image_url=null;if(pendingPostImage)image_url=await uploadPostImage(pendingPostImage);const {error}=await sb.from('posts').insert({author_id:session.user.id,body:body||'Shared an image',image_url});if(error)throw error;input.value='';document.getElementById('updateCounter').textContent='0 / 800';removePostImage();showToast('Update posted.');await loadCommunityFeed();}
+  try{let image_url=null;if(pendingPostImage)image_url=await uploadPostImage(pendingPostImage);const {error}=await sb.from('posts').insert({author_id:session.user.id,body:body||'Shared an image',image_url});if(error)throw error;localStorage.removeItem(UPDATE_DRAFT_KEY);input.value='';document.getElementById('updateCounter').textContent='0 / 800';removePostImage();showToast('Update posted.');await loadCommunityFeed();}
   catch(err){showToast("Couldn't post — "+err.message);}finally{postSubmitting=false;if(btn){btn.disabled=false;btn.textContent='Post update';}}
 }
 async function deleteCommunityPost(id){if(!confirm('Delete this update?'))return;const post=communityPosts.find(p=>p.id===id);const {error}=await sb.from('posts').delete().eq('id',id).eq('author_id',session.user.id);if(error)showToast(error.message);else{if(post?.image_url){const marker='/post-images/';const idx=post.image_url.indexOf(marker);if(idx>=0)await sb.storage.from('post-images').remove([decodeURIComponent(post.image_url.slice(idx+marker.length))]);}showToast('Update deleted.');loadCommunityFeed();}}
@@ -2426,6 +2541,182 @@ async function init(){
   subscribeDealsRealtime();
   subscribeCommunityRealtime();
   subscribeNotificationsRealtime();
+  setupGlobalPolish();
+  renderRecentlyViewed();
+  handleDeepLinks();
 }
 
 init();
+
+
+// ---------- interactive relationship network ----------
+let networkProfiles = [];
+let networkNodes = [];
+let networkEdges = [];
+let networkSimulationFrame = null;
+let networkSelectedId = null;
+let networkLoaded = false;
+let networkViewport = { scale: 1, x: 0, y: 0 };
+
+async function loadNetworkGraph(force=false){
+  if(networkLoaded && !force){ renderNetworkGraph(); return; }
+  const loading=document.getElementById('networkLoading');
+  if(loading) loading.style.display='grid';
+  try{
+    const [profilesRes,followsRes,dealsRes,listingsRes]=await Promise.all([
+      sb.from('profiles').select('id,display_name,avatar_url,role,entity_type,headline,location_text,bio').limit(120),
+      sb.from('follows').select('follower_id,following_id,created_at').limit(500),
+      sb.from('deals').select('sponsor_id,team_id,status').eq('status','completed').limit(300),
+      sb.from('listings').select('user_id,type').eq('active',true).limit(300)
+    ]);
+    if(profilesRes.error) throw profilesRes.error;
+    networkProfiles=profilesRes.data||[];
+    const profileIds=new Set(networkProfiles.map(p=>p.id));
+    const activeByUser=new Map();
+    (listingsRes.data||[]).forEach(l=>activeByUser.set(l.user_id,(activeByUser.get(l.user_id)||0)+1));
+    networkNodes=networkProfiles.map((p,i)=>({
+      ...p,
+      activeSignals:activeByUser.get(p.id)||0,
+      x:220+Math.cos(i*2.399)*Math.min(270,35+i*7),
+      y:220+Math.sin(i*2.399)*Math.min(220,35+i*6),
+      vx:0,vy:0
+    }));
+    networkEdges=[];
+    const edgeKeys=new Set();
+    (followsRes.data||[]).forEach(f=>{
+      if(!profileIds.has(f.follower_id)||!profileIds.has(f.following_id))return;
+      const key=`follow:${f.follower_id}:${f.following_id}`;
+      if(!edgeKeys.has(key)){edgeKeys.add(key);networkEdges.push({source:f.follower_id,target:f.following_id,type:'follow'});}
+    });
+    (dealsRes.data||[]).forEach(d=>{
+      if(!profileIds.has(d.sponsor_id)||!profileIds.has(d.team_id))return;
+      const pair=[d.sponsor_id,d.team_id].sort().join(':');
+      const key=`deal:${pair}`;
+      if(!edgeKeys.has(key)){edgeKeys.add(key);networkEdges.push({source:d.sponsor_id,target:d.team_id,type:'deal'});}
+    });
+    const connected=new Set(networkEdges.flatMap(e=>[e.source,e.target]));
+    networkNodes=networkNodes.filter(n=>connected.has(n.id)||n.activeSignals>0||n.id===session?.user?.id).slice(0,70);
+    const visibleIds=new Set(networkNodes.map(n=>n.id));
+    networkEdges=networkEdges.filter(e=>visibleIds.has(e.source)&&visibleIds.has(e.target));
+    networkLoaded=true;
+    renderNetworkGraph();
+  }catch(err){
+    console.error(err);
+    if(loading) loading.textContent='Could not load the network.';
+  }
+}
+
+function networkFilteredData(){
+  const edgeType=document.getElementById('networkEdgeFilter')?.value||'all';
+  const signalsOnly=!!document.getElementById('networkSignalsOnly')?.checked;
+  let edges=networkEdges.filter(e=>edgeType==='all'||e.type===edgeType);
+  let allowed=new Set(networkNodes.filter(n=>!signalsOnly||n.activeSignals>0).map(n=>n.id));
+  edges=edges.filter(e=>allowed.has(e.source)&&allowed.has(e.target));
+  const connected=new Set(edges.flatMap(e=>[e.source,e.target]));
+  let nodes=networkNodes.filter(n=>allowed.has(n.id)&&(connected.has(n.id)||n.activeSignals>0));
+  return {nodes,edges};
+}
+
+function renderNetworkGraph(){
+  const svg=document.getElementById('networkGraph');
+  const loading=document.getElementById('networkLoading');
+  if(!svg)return;
+  if(loading) loading.style.display='none';
+  const {nodes,edges}=networkFilteredData();
+  if(networkSimulationFrame) cancelAnimationFrame(networkSimulationFrame);
+  svg.innerHTML='';
+  const width=Math.max(svg.clientWidth||850,600),height=Math.max(svg.clientHeight||620,480);
+  svg.setAttribute('viewBox',`0 0 ${width} ${height}`);
+  const NS='http://www.w3.org/2000/svg';
+  const defs=document.createElementNS(NS,'defs');
+  defs.innerHTML='<marker id="networkArrow" viewBox="0 0 10 10" refX="17" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"></path></marker>';
+  svg.appendChild(defs);
+  const stage=document.createElementNS(NS,'g'); stage.classList.add('network-stage'); svg.appendChild(stage);
+  const edgeLayer=document.createElementNS(NS,'g'),nodeLayer=document.createElementNS(NS,'g');
+  stage.append(edgeLayer,nodeLayer);
+  const byId=new Map(nodes.map(n=>[n.id,n]));
+  nodes.forEach((n,i)=>{if(!Number.isFinite(n.x)){n.x=width/2+Math.cos(i)*120;n.y=height/2+Math.sin(i)*120;}});
+  const edgeEls=edges.map(e=>{
+    const line=document.createElementNS(NS,'line');
+    line.classList.add('network-edge',e.type);
+    if(e.type==='follow') line.setAttribute('marker-end','url(#networkArrow)');
+    line.dataset.source=e.source;line.dataset.target=e.target;
+    edgeLayer.appendChild(line);return line;
+  });
+  const nodeEls=nodes.map(n=>{
+    const g=document.createElementNS(NS,'g');g.classList.add('network-node');g.dataset.id=n.id;g.setAttribute('tabindex','0');
+    const radius=n.id===session?.user?.id?25:Math.min(22,14+Math.sqrt(n.activeSignals||0)*3);
+    const circle=document.createElementNS(NS,'circle'); circle.setAttribute('r',radius); circle.classList.add(n.role==='sponsor'?'sponsor':'sponsee');
+    if(n.id===networkSelectedId)circle.classList.add('selected');
+    const initials=document.createElementNS(NS,'text');initials.setAttribute('text-anchor','middle');initials.setAttribute('dy','.35em');initials.textContent=profileInitials(n.display_name||'?');
+    const label=document.createElementNS(NS,'text');label.classList.add('network-node-label');label.setAttribute('text-anchor','middle');label.setAttribute('y',radius+16);label.textContent=(n.display_name||'Unnamed').slice(0,22);
+    g.append(circle,initials,label);
+    g.addEventListener('click',()=>selectNetworkNode(n.id));
+    g.addEventListener('keydown',ev=>{if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();selectNetworkNode(n.id);}});
+    enableNetworkDrag(g,n,svg);
+    nodeLayer.appendChild(g);return g;
+  });
+  enableNetworkPanZoom(svg,stage);
+  let ticks=0;
+  function tick(){
+    const centerX=width/2,centerY=height/2;
+    for(let i=0;i<nodes.length;i++){
+      const a=nodes[i];
+      a.vx+=(centerX-a.x)*0.0008;a.vy+=(centerY-a.y)*0.0008;
+      for(let j=i+1;j<nodes.length;j++){
+        const b=nodes[j];let dx=b.x-a.x,dy=b.y-a.y;let d2=dx*dx+dy*dy||1;
+        if(d2<10000){const force=50/d2; a.vx-=dx*force;b.vx+=dx*force;a.vy-=dy*force;b.vy+=dy*force;}
+      }
+    }
+    edges.forEach(e=>{const a=byId.get(e.source),b=byId.get(e.target);if(!a||!b)return;let dx=b.x-a.x,dy=b.y-a.y,d=Math.sqrt(dx*dx+dy*dy)||1;const target=e.type==='deal'?125:150;const f=(d-target)*0.0009;a.vx+=dx*f;b.vx-=dx*f;a.vy+=dy*f;b.vy-=dy*f;});
+    nodes.forEach(n=>{if(!n.dragging){n.vx*=.88;n.vy*=.88;n.x=Math.max(35,Math.min(width-35,n.x+n.vx));n.y=Math.max(35,Math.min(height-45,n.y+n.vy));}});
+    edgeEls.forEach((el,i)=>{const e=edges[i],a=byId.get(e.source),b=byId.get(e.target);el.setAttribute('x1',a.x);el.setAttribute('y1',a.y);el.setAttribute('x2',b.x);el.setAttribute('y2',b.y);});
+    nodeEls.forEach((el,i)=>el.setAttribute('transform',`translate(${nodes[i].x},${nodes[i].y})`));
+    if(++ticks<320) networkSimulationFrame=requestAnimationFrame(tick);
+  }
+  tick();
+  centerNetwork();
+  if(!nodes.length){loading.textContent='No connections match these filters yet.';loading.style.display='grid';}
+}
+
+function profileInitials(name){return String(name||'?').split(/\s+/).slice(0,2).map(x=>x[0]).join('').toUpperCase();}
+function enableNetworkDrag(el,node,svg){
+  el.addEventListener('pointerdown',ev=>{ev.stopPropagation();node.dragging=true;el.setPointerCapture(ev.pointerId);});
+  el.addEventListener('pointermove',ev=>{if(!node.dragging)return;const pt=svg.createSVGPoint();pt.x=ev.clientX;pt.y=ev.clientY;const p=pt.matrixTransform(svg.getScreenCTM().inverse());node.x=(p.x-networkViewport.x)/networkViewport.scale;node.y=(p.y-networkViewport.y)/networkViewport.scale;});
+  const stop=()=>{node.dragging=false;};el.addEventListener('pointerup',stop);el.addEventListener('pointercancel',stop);
+}
+function enableNetworkPanZoom(svg,stage){
+  let panning=false,start=null;
+  svg.onpointerdown=ev=>{if(ev.target===svg){panning=true;start={x:ev.clientX-networkViewport.x,y:ev.clientY-networkViewport.y};svg.setPointerCapture(ev.pointerId);}};
+  svg.onpointermove=ev=>{if(panning){networkViewport.x=ev.clientX-start.x;networkViewport.y=ev.clientY-start.y;applyNetworkTransform(stage);}};
+  svg.onpointerup=()=>{panning=false;};
+  svg.onwheel=ev=>{ev.preventDefault();const factor=ev.deltaY<0?1.1:.9;networkViewport.scale=Math.max(.45,Math.min(2.3,networkViewport.scale*factor));applyNetworkTransform(stage);};
+}
+function applyNetworkTransform(stage=document.querySelector('#networkGraph .network-stage')){if(stage)stage.setAttribute('transform',`translate(${networkViewport.x} ${networkViewport.y}) scale(${networkViewport.scale})`);}
+function centerNetwork(){networkViewport={scale:1,x:0,y:0};applyNetworkTransform();}
+
+function selectNetworkNode(id){
+  networkSelectedId=id;
+  document.querySelectorAll('.network-node circle').forEach(c=>c.classList.toggle('selected',c.parentElement.dataset.id===id));
+  const node=networkNodes.find(n=>n.id===id);if(!node)return;
+  const outgoing=networkEdges.filter(e=>e.source===id),incoming=networkEdges.filter(e=>e.target===id),deals=networkEdges.filter(e=>e.type==='deal'&&(e.source===id||e.target===id));
+  const neighbors=[...new Set([...outgoing.map(e=>e.target),...incoming.map(e=>e.source),...deals.map(e=>e.source===id?e.target:e.source)])].map(x=>networkNodes.find(n=>n.id===x)).filter(Boolean).slice(0,6);
+  document.getElementById('networkInspector').innerHTML=`
+    <div class="network-profile-card">
+      <div class="network-profile-head"><div class="avatar avatar-lg">${node.avatar_url?`<img src="${escapeHtml(node.avatar_url)}" alt="">`:profileInitials(node.display_name)}</div><div><span class="entity-chip">${escapeHtml(node.entity_type||node.role||'Entity')}</span><h3>${escapeHtml(node.display_name||'Unnamed')}</h3><p>${escapeHtml(node.headline||node.location_text||'')}</p></div></div>
+      <div class="network-stat-grid"><span><strong>${incoming.length}</strong>Followers</span><span><strong>${outgoing.length}</strong>Following</span><span><strong>${deals.length}</strong>Completed links</span><span><strong>${node.activeSignals}</strong>Active signals</span></div>
+      <p class="network-summary">${escapeHtml(node.bio||'No public summary yet.')}</p>
+      <div class="network-inspector-actions"><button class="btn btn-amber" onclick="openProfile('${node.id}')">Open profile</button>${session&&session.user.id!==node.id?`<button class="btn btn-ghost" onclick="toggleFollow('${node.id}',true)">${followingIds.has(node.id)?'Following':'Follow'}</button>`:''}</div>
+      ${neighbors.length?`<div class="network-neighbors"><h4>Connected entities</h4>${neighbors.map(n=>`<button onclick="selectNetworkNode('${n.id}')"><span class="avatar avatar-xs">${profileInitials(n.display_name)}</span><span>${escapeHtml(n.display_name||'Unnamed')}</span></button>`).join('')}</div>`:''}
+    </div>`;
+}
+
+function filterNetworkSearch(){
+  const q=(document.getElementById('networkSearch')?.value||'').trim().toLowerCase();
+  const box=document.getElementById('networkSearchResults');if(!box)return;
+  if(!q){box.innerHTML='';box.classList.remove('open');return;}
+  const matches=networkNodes.filter(n=>`${n.display_name||''} ${n.headline||''} ${n.location_text||''}`.toLowerCase().includes(q)).slice(0,7);
+  box.innerHTML=matches.map(n=>`<button onclick="chooseNetworkSearch('${n.id}')"><span class="avatar avatar-xs">${profileInitials(n.display_name)}</span><span><strong>${escapeHtml(n.display_name||'Unnamed')}</strong><small>${escapeHtml(n.headline||n.entity_type||'')}</small></span></button>`).join('')||'<div class="network-no-result">No matching entities</div>';
+  box.classList.add('open');
+}
+function chooseNetworkSearch(id){document.getElementById('networkSearch').value='';document.getElementById('networkSearchResults').classList.remove('open');selectNetworkNode(id);const el=document.querySelector(`.network-node[data-id="${id}"]`);el?.classList.add('pulse-node');setTimeout(()=>el?.classList.remove('pulse-node'),1000);}
