@@ -34,6 +34,7 @@ let profileCache = {};         // userId -> profile row
 let profileModalUserId = null;
 
 let communityPosts = [];
+let platformUpdateCount = 0;
 let communityComments = {};
 let communityLikes = new Set();
 let followingIds = new Set();
@@ -110,7 +111,7 @@ function tagPickerHtml(key, label, hint){
       <label>${label}</label>
       <div class="tag-picker" id="${key}Picker">
         <div class="tag-chips" id="${key}Chips"></div>
-        <input type="text" id="${key}Search" placeholder="Type to search tags…" autocomplete="on"
+        <input type="text" id="${key}Search" placeholder="Type to search tags…" autocomplete="off"
           oninput="handleTagPickerInput('${key}')"
           onfocus="handleTagPickerInput('${key}')"
           onblur="hideTagSuggestions('${key}')">
@@ -720,7 +721,7 @@ function renderWizardStepBody(key){
         <div class="location-row">
           <div class="autocomplete-wrap">
             <input type="text" id="wLocation" value="${escapeHtml(wizard.location_text)}" placeholder="Start typing an address or city…"
-              autocomplete="on"
+              autocomplete="off"
               oninput="handleLocationInput('wLocation','wLocationSuggestions')"
               onblur="hideLocationSuggestions('wLocationSuggestions')">
             <div class="autocomplete-list" id="wLocationSuggestions"></div>
@@ -968,18 +969,41 @@ function updateCounts(){
   document.getElementById('totalCount').textContent = listings.length + " signal" + (listings.length===1?"":"s") + " total";
 }
 
+function updateProfessionalStats(){
+  const signalEl = document.getElementById('metricSignals');
+  const entityEl = document.getElementById('metricEntities');
+  const updatesEl = document.getElementById('metricUpdates');
+  const categoriesEl = document.getElementById('metricCategories');
+  if(signalEl) signalEl.textContent = listings.length;
+  if(entityEl) entityEl.textContent = new Set(listings.map(l => l.user_id).filter(Boolean)).size;
+  if(updatesEl) updatesEl.textContent = platformUpdateCount || communityPosts.length;
+  if(categoriesEl) categoriesEl.textContent = new Set(listings.map(l => l.category).filter(Boolean)).size;
+}
+
 function renderBoard(){
   const grid = document.getElementById('boardGrid');
   const cat = document.getElementById('categoryFilter').value;
   const q = document.getElementById('searchFilter').value.trim().toLowerCase();
 
-  const items = listings
+  let items = listings
     .filter(l => l.type === boardType)
     .filter(l => !showSavedOnly || savedListingIds.has(l.id))
     .filter(l => !cat || l.category === cat)
     .filter(l => !q || (l.name+" "+l.tagline+" "+l.description+" "+(l.tags||[]).join(" ")).toLowerCase().includes(q));
 
+  const sort = document.getElementById('sortFilter')?.value || 'newest';
+  const myRefForSort = session ? myReferenceListing(boardType === 'sponsor' ? 'team' : 'sponsor') : null;
+  const myProfileForSort = session ? profileCache[session.user.id] : null;
+  if(sort === 'budget_high') items.sort((a,b)=>(Number(b.budget_max)||0)-(Number(a.budget_max)||0));
+  else if(sort === 'budget_low') items.sort((a,b)=>(Number(a.budget_min)||0)-(Number(b.budget_min)||0));
+  else if(sort === 'match' && myRefForSort){
+    items.sort((a,b)=>computeMatchPct(myRefForSort,b,myProfileForSort,profileCache[b.user_id])-computeMatchPct(myRefForSort,a,myProfileForSort,profileCache[a.user_id]));
+  } else items.sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+
+  const resultCount = document.getElementById('boardResultCount');
+  if(resultCount) resultCount.textContent = `${items.length} result${items.length===1?'':'s'}`;
   updateCounts();
+  updateProfessionalStats();
 
   if(items.length === 0){
     grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1">
@@ -1477,7 +1501,7 @@ function renderProfileModal(profile, theirListings, isOwn, trust, community){
               <div class="field full"><label for="pAchievements">Highlights and achievements</label><textarea id="pAchievements" maxlength="800" placeholder="Awards, milestones, notable work, results, or press.">${escapeHtml(profile.achievements || '')}</textarea></div>
               <div class="field"><label for="pLink">Website or main link</label><input type="url" id="pLink" value="${escapeHtml(profile.link || '')}" placeholder="https://..."></div>
               <div class="field"><label for="pContactEmail">Public contact email</label><input type="email" id="pContactEmail" value="${escapeHtml(profile.contact_email || '')}" placeholder="partnerships@example.org"></div>
-              <div class="field full"><label for="pLocation">Location</label><div class="location-row"><div class="autocomplete-wrap"><input type="text" id="pLocation" value="${escapeHtml(profile.location_text || '')}" placeholder="City or region" autocomplete="on" oninput="handleLocationInput('pLocation','pLocationSuggestions')" onblur="hideLocationSuggestions('pLocationSuggestions')"><div class="autocomplete-list" id="pLocationSuggestions"></div></div><button type="button" class="btn btn-ghost btn-small" id="useLocationBtnProfile" onclick="useMyLocation('useLocationBtnProfile','pLocation')">📍 Use location</button></div></div>
+              <div class="field full"><label for="pLocation">Location</label><div class="location-row"><div class="autocomplete-wrap"><input type="text" id="pLocation" value="${escapeHtml(profile.location_text || '')}" placeholder="City or region" autocomplete="off" oninput="handleLocationInput('pLocation','pLocationSuggestions')" onblur="hideLocationSuggestions('pLocationSuggestions')"><div class="autocomplete-list" id="pLocationSuggestions"></div></div><button type="button" class="btn btn-ghost btn-small" id="useLocationBtnProfile" onclick="useMyLocation('useLocationBtnProfile','pLocation')">📍 Use location</button></div></div>
               <div class="field full">${tagPickerHtml('pTags', 'Topics and categories')}</div>
               <div class="field full"><label class="checkbox-row"><input type="checkbox" id="pNotifyMatches" ${profile.notify_matches !== false ? 'checked' : ''}><span>Email me when a strong match appears</span></label></div>
             </div>
@@ -2299,7 +2323,7 @@ async function loadCommunityFeed(){
     const ids=[...followingIds,session.user.id]; query=query.in('author_id',ids);
   }
   const {data,error}=await query; if(error){feed.innerHTML=`<div class="empty-state">Community updates are not enabled yet. Run the community SQL in Supabase.</div>`;return;}
-  communityPosts=data||[]; const authorIds=[...new Set(communityPosts.map(p=>p.author_id))]; const missing=authorIds.filter(id=>!profileCache[id]);
+  communityPosts=data||[]; platformUpdateCount = Math.max(platformUpdateCount, communityPosts.length); updateProfessionalStats(); const authorIds=[...new Set(communityPosts.map(p=>p.author_id))]; const missing=authorIds.filter(id=>!profileCache[id]);
   if(missing.length){const {data:ps}=await sb.from('profiles').select('*').in('id',missing);(ps||[]).forEach(p=>profileCache[p.id]=p);}
   const postIds=communityPosts.map(p=>p.id); communityComments={}; communityLikes=new Set();
   if(postIds.length){
@@ -2384,6 +2408,10 @@ async function init(){
   initTagPicker('fTags', []);
   setBoardType('sponsor');
   await loadListings();
+  const { count: updateCount } = await sb.from('posts').select('id', { count:'exact', head:true });
+  const updatesMetric = document.getElementById('metricUpdates');
+  if(updateCount != null) platformUpdateCount = updateCount;
+  if(updatesMetric && updateCount != null) updatesMetric.textContent = updateCount;
   subscribeRealtime();
 
   if(session){
