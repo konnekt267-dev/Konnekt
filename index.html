@@ -14,6 +14,7 @@
     <nav>
       <button class="nav-btn active" data-view="board" onclick="setView('board')">Board</button>
       <button class="nav-btn" data-view="community" onclick="setView('community')">Community</button>
+      <button class="nav-btn" data-view="network" onclick="setView('network')">Network</button>
       <button class="nav-btn" data-view="post" onclick="setView('post')">Post a signal</button>
       <button class="nav-btn" data-view="deals" onclick="setView('deals')">Deals<span class="nav-badge" id="dealsBadge" style="display:none;"></span></button>
       <button class="nav-btn" data-view="messages" onclick="setView('messages')">Messages<span class="nav-badge" id="threadBadge" style="display:none;"></span></button>
@@ -80,6 +81,10 @@
     </div>
 
     <div class="results-summary"><span id="boardResultCount">0 results</span><span>Profiles and signals are public; conversations and saved items stay private.</span></div>
+    <section class="recently-viewed" id="recentlyViewedSection" style="display:none;">
+      <div class="recently-viewed-head"><div><span class="eyebrow">Pick up where you left off</span><h3>Recently viewed</h3></div><button class="link-btn" onclick="clearRecentlyViewed()">Clear</button></div>
+      <div class="recently-viewed-row" id="recentlyViewedRow"></div>
+    </section>
     <div class="board-grid" id="boardGrid"></div>
   </section>
 
@@ -95,6 +100,44 @@
       <button data-feed="following" onclick="setCommunityFeed('following')">Following</button>
     </div>
     <div id="communityFeed" class="community-feed"></div>
+  </section>
+
+  <section id="networkSection" class="network-section" style="display:none;">
+    <div class="section-title network-title">
+      <div>
+        <span class="eyebrow">Relationship intelligence</span>
+        <h2>Konnekt Network</h2>
+        <span class="hint">Explore follows, active signals, and completed sponsorship connections.</span>
+      </div>
+      <div class="network-actions">
+        <button class="btn btn-ghost" onclick="centerNetwork()">Center graph</button>
+        <button class="btn btn-amber" onclick="loadNetworkGraph(true)">Refresh</button>
+      </div>
+    </div>
+    <div class="network-toolbar">
+      <label class="network-search-wrap">Find an entity
+        <input id="networkSearch" type="search" placeholder="Search profiles…" oninput="filterNetworkSearch()">
+      </label>
+      <div id="networkSearchResults" class="network-search-results"></div>
+      <label>Connection type
+        <select id="networkEdgeFilter" onchange="renderNetworkGraph()">
+          <option value="all">All connections</option>
+          <option value="follow">Follows</option>
+          <option value="deal">Completed sponsorships</option>
+        </select>
+      </label>
+      <label class="checkbox-row compact"><input id="networkSignalsOnly" type="checkbox" onchange="renderNetworkGraph()"><span>Only entities with active signals</span></label>
+    </div>
+    <div class="network-shell">
+      <div class="network-canvas-wrap" id="networkCanvasWrap">
+        <svg id="networkGraph" class="network-graph" role="img" aria-label="Interactive relationship graph"></svg>
+        <div id="networkLoading" class="network-loading">Building the network…</div>
+        <div class="network-legend"><span><i class="legend-dot sponsor"></i>Sponsor</span><span><i class="legend-dot sponsee"></i>Sponsee</span><span><i class="legend-line follow"></i>Follows</span><span><i class="legend-line deal"></i>Completed deal</span></div>
+      </div>
+      <aside class="network-inspector" id="networkInspector">
+        <div class="empty-state"><strong>Select a node</strong>Click any entity to view its connection summary and open its profile.</div>
+      </aside>
+    </div>
   </section>
 
   <div class="post-panel" id="postPanel">
@@ -429,6 +472,8 @@
     </form>
   </div>
 </div>
+
+<button class="back-to-top" id="backToTop" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="Back to top">↑</button>
 
 <div class="toast" id="toast"></div>
 
