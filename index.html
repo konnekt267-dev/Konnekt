@@ -10,7 +10,7 @@
 
 <header>
   <div class="wrap header-row">
-    <div class="logo"><span class="dot"></span>Konnekt</div>
+    <button class="logo logo-button" onclick="setView('board')" aria-label="Go to Konnekt home"><span class="dot"></span><span>Konnekt</span></button>
     <nav>
       <button class="nav-btn active" data-view="board" onclick="setView('board')">Board</button>
       <button class="nav-btn" data-view="community" onclick="setView('community')">Community</button>
@@ -36,6 +36,7 @@
         <p>Sponsees, creators, and projects broadcast what they're building. Sponsors tune in to what they want to back. Konnekt is the board where both sides find each other, in the open.</p>
         <div class="cta-row">
           <button class="btn btn-amber" onclick="setView('post')">Post a signal</button>
+          <button class="btn btn-ghost" onclick="setView('community')">Explore the community</button>
         </div>
       </div>
       <div class="scope" id="scope">
@@ -47,6 +48,13 @@
         </svg>
       </div>
     </div>
+  </section>
+
+  <section class="platform-metrics" aria-label="Konnekt platform activity">
+    <div class="metric-card"><strong id="metricSignals">0</strong><span>active signals</span></div>
+    <div class="metric-card"><strong id="metricEntities">0</strong><span>entities represented</span></div>
+    <div class="metric-card"><strong id="metricUpdates">0</strong><span>community updates</span></div>
+    <div class="metric-card"><strong id="metricCategories">0</strong><span>active categories</span></div>
   </section>
 
   <section id="boardSection">
@@ -61,10 +69,17 @@
         <button id="filterSponsorBtn" class="type-sponsor active" onclick="setBoardType('sponsor')">Sponsors</button>
       </div>
       <select id="categoryFilter" onchange="renderBoard()"></select>
+      <select id="sortFilter" onchange="renderBoard()" aria-label="Sort signals">
+        <option value="newest">Newest first</option>
+        <option value="match">Best match</option>
+        <option value="budget_high">Highest budget</option>
+        <option value="budget_low">Lowest budget</option>
+      </select>
       <button class="saved-filter-btn" id="savedFilterBtn" onclick="toggleSavedOnly()">☆ Saved</button>
       <input type="text" id="searchFilter" placeholder="Search by name or keyword…" oninput="renderBoard()">
     </div>
 
+    <div class="results-summary"><span id="boardResultCount">0 results</span><span>Profiles and signals are public; conversations and saved items stay private.</span></div>
     <div class="board-grid" id="boardGrid"></div>
   </section>
 
@@ -208,9 +223,22 @@
     </div>
   </div>
 
-  <footer>
-    <span>Konnekt — a public board. Every listing here is visible to everyone who opens this page.</span>
-    <span class="mono" id="totalCount">0 signals total</span>
+  <section class="professional-sections">
+    <div class="section-title"><div><h2>Built for real partnerships</h2><span class="hint">A clear path from discovery to an ongoing sponsorship relationship.</span></div></div>
+    <div class="how-grid">
+      <article class="how-card"><span>01</span><h3>Build credibility</h3><p>Create a complete entity profile with your mission, audience, achievements, and partnership goals.</p></article>
+      <article class="how-card"><span>02</span><h3>Find alignment</h3><p>Browse focused sponsorship signals, compare fit, save opportunities, and follow organizations you care about.</p></article>
+      <article class="how-card"><span>03</span><h3>Move forward</h3><p>Connect privately, make a structured offer, coordinate deliverables, and document a completed partnership.</p></article>
+    </div>
+    <div class="trust-panel">
+      <div><span class="trust-kicker">TRUST &amp; CLARITY</span><h3>Professional tools without pretending every account is verified.</h3><p>Konnekt shows profile completeness, public activity, reviews, and completed-deal history so users can make informed decisions. Always verify identities and terms independently before committing resources.</p></div>
+      <button class="btn btn-ghost" onclick="openSignupWizard()">Create a sponsor-ready profile</button>
+    </div>
+  </section>
+
+  <footer class="site-footer">
+    <div><strong>Konnekt</strong><span>Where sponsorship signals become partnerships.</span></div>
+    <div class="footer-meta"><span>Public profiles and listings</span><span>Private messages and saved signals</span><span class="mono" id="totalCount">0 signals total</span></div>
   </footer>
 </div>
 
