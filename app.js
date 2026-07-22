@@ -376,7 +376,7 @@ function useMyLocation(btnId, textInputId){
       showToast("Location captured — this helps match you with nearby sponsees and sponsors.");
     },
     () => {
-      btn.disabled = false; btn.textContent = original;
+      btn.disabled = false; 
       showToast("Couldn't get your location — you can still type a city.");
     },
     { timeout: 8000 }
@@ -832,7 +832,7 @@ function renderWizardStepBody(key){
               onblur="hideLocationSuggestions('wLocationSuggestions')">
             <div class="autocomplete-list" id="wLocationSuggestions"></div>
           </div>
-          <button type="button" class="btn btn-ghost btn-small" id="wLocationBtn" onclick="useMyLocation('wLocationBtn','wLocation')"><img src="images/location_pin.png" class="location-img" alt="📍" width="16px" height="16px">Share my locatio</button>
+          <button type="button" class="btn btn-ghost btn-small" id="wLocationBtn" onclick="useMyLocation('wLocationBtn','wLocation')"><img src="images/location_pin.png" class="location-img" alt="📍" width="12px" height="18px"></button>
         </div>
         <p class="field-hint">You can change this any time in your profile settings.</p>
       </div>`;
