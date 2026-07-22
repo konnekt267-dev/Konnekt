@@ -1865,7 +1865,7 @@ function renderThreadMessages(){
     </div>` : ''}
     <form class="thread-input" onsubmit="sendMessage(event)">
       <label class="attach-btn" title="Attach image">
-        <img src="images/paperclip_img.png" alt="📎" width="11px" height="20px">
+        <img src="images/paperclip_img.png" alt="📎" width="7px" height="20px">
         <input type="file" accept="image/*" id="threadImageInput" onchange="handleThreadImageChange(event)" style="display:none;">
       </label>
       <input type="text" id="threadInput" placeholder="Write a message…" autocomplete="off">
