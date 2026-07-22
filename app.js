@@ -2396,7 +2396,7 @@ function renderCommunityComposer(){
   el.innerHTML=`<div class="composer-head">${avatarHtml(myProfile,displayName(),42)}<div><strong>Share an update as ${escapeHtml(displayName())}</strong><span>Progress, events, needs, opportunities, and sponsorship impact.</span></div></div>
     <textarea id="updateBody" maxlength="800" placeholder="What is happening?"></textarea>
     <div id="postImagePreview" class="post-image-preview" style="display:none"></div>
-    <div class="composer-foot"><div class="composer-tools"><label class="btn btn-ghost btn-small file-btn">📷 Add image<input type="file" accept="image/jpeg,image/png,image/webp" onchange="handlePostImage(event)" style="display:none"></label><span id="updateCounter">0 / 800</span></div><button id="postUpdateBtn" class="btn btn-amber" onclick="createCommunityPost()">Post update</button></div>`;
+    <div class="composer-foot"><div class="composer-tools"><label class="btn btn-ghost btn-small file-btn">Upload image<input type="file" accept="image/jpeg,image/png,image/webp" onchange="handlePostImage(event)" style="display:none"></label><span id="updateCounter">0 / 800</span></div><button id="postUpdateBtn" class="btn btn-amber" onclick="createCommunityPost()">Post update</button></div>`;
   const updateBody=document.getElementById('updateBody');
   const saved=safeJsonParse(localStorage.getItem(UPDATE_DRAFT_KEY),null);
   if(saved?.text && Date.now()-Number(saved.savedAt||0)<14*86400000){ updateBody.value=saved.text; document.getElementById('updateCounter').textContent=`${saved.text.length} / 800`; }
