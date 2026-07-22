@@ -612,7 +612,7 @@ function renderAccountArea(){
   if(session){
     const name = displayName();
     area.innerHTML = `
-      <button class="notification-button" onclick="openNotifications()" aria-label="Notifications"><img src="images/bell_greyscale.png" class="notifications-img" alt="Notifications" width="25" height="25"><span class="nav-badge notification-badge" id="notificationBadge" style="display:none;"></span></button>
+      <button class="notification-button" onclick="openNotifications()" aria-label="Notifications"><img src="images/bell_greyscale.png" class="notifications-img" alt="Notifications" width="21" height="24"><span class="nav-badge notification-badge" id="notificationBadge" style="display:none;"></span></button>
       <div class="account-chip">
         <span class="avatar">${myProfile && myProfile.avatar_url ? `<img src="${myProfile.avatar_url}" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">` : initials(name)}</span>
         ${escapeHtml(name)}
