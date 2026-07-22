@@ -530,6 +530,7 @@ footer{border-top:1px solid var(--border);padding:28px 0 40px;color:var(--text-f
 .notification-item strong{font-size:13.5px;font-weight:600;}
 .notification-item small{font-size:12px;color:var(--text-faint);}
 .notification-avatar{display:grid;place-items:center;}
+.notifications-img{display: block; margin: 0; auto;}
 
 /* Profile completion */
 .profile-completion{margin-top:16px;padding:13px;border:1px solid var(--border);border-radius:12px;background:var(--surface-2);}
