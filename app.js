@@ -832,7 +832,7 @@ function renderWizardStepBody(key){
               onblur="hideLocationSuggestions('wLocationSuggestions')">
             <div class="autocomplete-list" id="wLocationSuggestions"></div>
           </div>
-          <button type="button" class="btn btn-ghost btn-small" id="wLocationBtn" onclick="useMyLocation('wLocationBtn','wLocation')">Share my location</button>
+          <button type="button" class="btn btn-ghost btn-small" id="wLocationBtn" onclick="useMyLocation('wLocationBtn','wLocation')"><img src="images/location_pin.png" class="location-img" alt="📍" width="16px" height="16px">Share my locatio</button>
         </div>
         <p class="field-hint">You can change this any time in your profile settings.</p>
       </div>`;
