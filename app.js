@@ -832,7 +832,7 @@ function renderWizardStepBody(key){
               onblur="hideLocationSuggestions('wLocationSuggestions')">
             <div class="autocomplete-list" id="wLocationSuggestions"></div>
           </div>
-          <button type="button" class="btn btn-ghost btn-small" id="wLocationBtn" onclick="useMyLocation('wLocationBtn','wLocation')"><img src="images/location_pin.png" class="location-img" alt="📍" width="16px" height="16px"> Share my location</button>
+          <button type="button" class="btn btn-ghost btn-small" id="wLocationBtn" onclick="useMyLocation('wLocationBtn','wLocation')">Share my location</button>
         </div>
         <p class="field-hint">You can change this any time in your profile settings.</p>
       </div>`;
@@ -1613,7 +1613,7 @@ function renderProfileModal(profile, theirListings, isOwn, trust, community){
               <div class="field full"><label for="pAchievements">Highlights and achievements</label><textarea id="pAchievements" maxlength="800" placeholder="Awards, milestones, notable work, results, or press.">${escapeHtml(profile.achievements || '')}</textarea></div>
               <div class="field"><label for="pLink">Website or main link</label><input type="url" id="pLink" value="${escapeHtml(profile.link || '')}" placeholder="https://..."></div>
               <div class="field"><label for="pContactEmail">Public contact email</label><input type="email" id="pContactEmail" value="${escapeHtml(profile.contact_email || '')}" placeholder="partnerships@example.org"></div>
-              <div class="field full"><label for="pLocation">Location</label><div class="location-row"><div class="autocomplete-wrap"><input type="text" id="pLocation" value="${escapeHtml(profile.location_text || '')}" placeholder="City or region" autocomplete="off" oninput="handleLocationInput('pLocation','pLocationSuggestions')" onblur="hideLocationSuggestions('pLocationSuggestions')"><div class="autocomplete-list" id="pLocationSuggestions"></div></div><button type="button" class="btn btn-ghost btn-small" id="useLocationBtnProfile" onclick="useMyLocation('useLocationBtnProfile','pLocation')">📍 Use location</button></div></div>
+              <div class="field full"><label for="pLocation">Location</label><div class="location-row"><div class="autocomplete-wrap"><input type="text" id="pLocation" value="${escapeHtml(profile.location_text || '')}" placeholder="City or region" autocomplete="off" oninput="handleLocationInput('pLocation','pLocationSuggestions')" onblur="hideLocationSuggestions('pLocationSuggestions')"><div class="autocomplete-list" id="pLocationSuggestions"></div></div><button type="button" class="btn btn-ghost btn-small" id="useLocationBtnProfile" onclick="useMyLocation('useLocationBtnProfile','pLocation')"><img src="images/location_pin.png" class="location-img" alt="📍" width="16px" height="16px">Use location</button></div></div>
               <div class="field full">${tagPickerHtml('pTags', 'Topics and categories')}</div>
               <div class="field full"><label class="checkbox-row"><input type="checkbox" id="pNotifyMatches" ${profile.notify_matches !== false ? 'checked' : ''}><span>Email me when a strong match appears</span></label></div>
             </div>
