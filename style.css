@@ -461,7 +461,7 @@ footer{border-top:1px solid var(--border);padding:28px 0 40px;color:var(--text-f
 .review-list{display:flex;flex-direction:column;gap:12px;}
 .review-item{background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;}
 .review-item-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px;}
-.review-stars{color:var(--amber);font-size:13px;letter-spacing:1px;}
+.review-stars{color:#ffd700;font-size:13px;letter-spacing:1px;}
 .review-author{font-size:12.5px;font-weight:600;}
 .review-time{font-size:11px;color:var(--text-faint);margin-left:auto;}
 .review-body{font-size:13px;color:var(--text-muted);line-height:1.5;}
