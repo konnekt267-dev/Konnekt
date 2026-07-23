@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Konnekt — sponsees and sponsors, tuned to find each other</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <div class="wrap header-row">
+    <button class="logo logo-button" onclick="setView('board')" aria-label="Go to Konnekt home"><span class="dot"></span><span>Konnekt</span></button>
+    <nav>
+      <button class="nav-btn active" data-view="board" onclick="setView('board')">Board</button>
+      <button class="nav-btn" data-view="community" onclick="setView('community')">Community</button>
+      <button class="nav-btn" data-view="network" onclick="setView('network')">Network</button>
+      <button class="nav-btn" data-view="post" onclick="setView('post')">Post a signal</button>
+      <button class="nav-btn" data-view="deals" onclick="setView('deals')">Deals<span class="nav-badge" id="dealsBadge" style="display:none;"></span></button>
+      <button class="nav-btn" data-view="messages" onclick="setView('messages')">Messages<span class="nav-badge" id="threadBadge" style="display:none;"></span></button>
+      <span class="live-count"><span class="pulse"></span><span id="liveCount">0</span> live</span>
+    </nav>
+    <div class="account-area" id="accountArea">
+      <button class="btn btn-ghost" onclick="openAuthModal()">Sign in</button>
+      <button class="btn btn-amber" onclick="openSignupWizard()">Create account</button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <section class="hero">
+    <div class="hero-grid">
+      <div>
+        <div class="eyebrow">Sponsorship, both directions</div>
+        <h1>Two signals.<br><em>One frequency.</em></h1>
+        <p>Sponsees, creators, and projects broadcast what they're building. Sponsors tune in to what they want to back. Konnekt is the board where both sides find each other, in the open.</p>
+        <div class="cta-row">
+          <button class="btn btn-amber" onclick="setView('post')">Post a signal</button>
+          <button class="btn btn-ghost" onclick="setView('community')">Explore the community</button>
+        </div>
+      </div>
+      <div class="scope" id="scope">
+        <div class="scope-label"><span>CH — SPONSEE</span><span>CH — SPONSOR</span></div>
+        <svg viewBox="0 0 360 120">
+          <path class="wave-team path-team" d="M0,60 C 60,20 120,100 180,60 S 300,20 360,60" fill="none" stroke-width="2"/>
+          <path class="wave-sponsor path-sponsor" d="M0,70 C 60,110 120,30 180,70 S 300,110 360,70" fill="none" stroke-width="2"/>
+          <circle class="sync-point" cx="180" cy="65" r="0"/>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <section class="platform-metrics" aria-label="Konnekt platform activity">
+    <div class="metric-card"><strong id="metricSignals">0</strong><span>active signals</span></div>
+    <div class="metric-card"><strong id="metricEntities">0</strong><span>entities represented</span></div>
+    <div class="metric-card"><strong id="metricUpdates">0</strong><span>community updates</span></div>
+    <div class="metric-card"><strong id="metricCategories">0</strong><span>active categories</span></div>
+  </section>
+
+  <section id="boardSection">
+    <div class="section-title">
+      <h2>The board</h2>
+      <span class="hint" id="boardHint">Browsing sponsors looking to back a team</span>
+    </div>
+
+    <div class="filters">
+      <div class="toggle-group">
+        <button id="filterTeamBtn" class="type-team" onclick="setBoardType('team')">Sponsees</button>
+        <button id="filterSponsorBtn" class="type-sponsor active" onclick="setBoardType('sponsor')">Sponsors</button>
+      </div>
+      <select id="categoryFilter" onchange="renderBoard()"></select>
+      <select id="sortFilter" onchange="renderBoard()" aria-label="Sort signals">
+        <option value="newest">Newest first</option>
+        <option value="match">Best match</option>
+        <option value="budget_high">Highest budget</option>
+        <option value="budget_low">Lowest budget</option>
+      </select>
+      <button class="saved-filter-btn" id="savedFilterBtn" onclick="toggleSavedOnly()">☆ Saved</button>
+      <input type="text" id="searchFilter" placeholder="Search by name or keyword…" oninput="renderBoard()">
+    </div>
+
+    <div class="results-summary"><span id="boardResultCount">0 results</span><span>Profiles and signals are public; conversations and saved items stay private.</span></div>
+    <section class="recently-viewed" id="recentlyViewedSection" style="display:none;">
+      <div class="recently-viewed-head"><div><span class="eyebrow">Pick up where you left off</span><h3>Recently viewed</h3></div><button class="link-btn" onclick="clearRecentlyViewed()">Clear</button></div>
+      <div class="recently-viewed-row" id="recentlyViewedRow"></div>
+    </section>
+    <div class="board-grid" id="boardGrid"></div>
+  </section>
+
+
+  <section id="communitySection" style="display:none;">
+    <div class="section-title community-title">
+      <div><h2>Community updates</h2><span class="hint">Progress, wins, needs, and news from sponsorship-ready entities.</span></div>
+      <button class="btn btn-amber" onclick="focusUpdateComposer()">Post an update</button>
+    </div>
+    <div id="communityComposer" class="update-composer"></div>
+    <div class="community-tabs">
+      <button class="active" data-feed="discover" onclick="setCommunityFeed('discover')">Discover</button>
+      <button data-feed="following" onclick="setCommunityFeed('following')">Following</button>
+    </div>
+    <div id="communityFeed" class="community-feed"></div>
+  </section>
+
+  <section id="networkSection" class="network-section" style="display:none;">
+    <div class="section-title network-title">
+      <div>
+        <span class="eyebrow">Relationship intelligence</span>
+        <h2>Konnekt Network</h2>
+        <span class="hint">Explore follows, active signals, and completed sponsorship connections.</span>
+      </div>
+      <div class="network-actions">
+        <button class="btn btn-ghost" onclick="centerNetwork()">Center graph</button>
+        <button class="btn btn-amber" onclick="loadNetworkGraph(true)">Refresh</button>
+      </div>
+    </div>
+    <div class="network-toolbar">
+      <label class="network-search-wrap">Find an entity
+        <input id="networkSearch" type="search" placeholder="Search profiles…" oninput="filterNetworkSearch()">
+      </label>
+      <div id="networkSearchResults" class="network-search-results"></div>
+      <label>Connection type
+        <select id="networkEdgeFilter" onchange="renderNetworkGraph()">
+          <option value="all">All connections</option>
+          <option value="follow">Follows</option>
+          <option value="deal">Completed sponsorships</option>
+        </select>
+      </label>
+      <label class="checkbox-row compact"><input id="networkSignalsOnly" type="checkbox" onchange="renderNetworkGraph()"><span>Only entities with active signals</span></label>
+    </div>
+    <div class="network-shell">
+      <div class="network-canvas-wrap" id="networkCanvasWrap">
+        <svg id="networkGraph" class="network-graph" role="img" aria-label="Interactive relationship graph"></svg>
+        <div id="networkLoading" class="network-loading">Building the network…</div>
+        <div class="network-legend"><span><i class="legend-dot sponsor"></i>Sponsor</span><span><i class="legend-dot sponsee"></i>Sponsee</span><span><i class="legend-line follow"></i>Follows</span><span><i class="legend-line deal"></i>Completed deal</span></div>
+      </div>
+      <aside class="network-inspector" id="networkInspector">
+        <div class="empty-state"><strong>Select a node</strong>Click any entity to view its connection summary and open its profile.</div>
+      </aside>
+    </div>
+  </section>
+
+  <div class="post-panel" id="postPanel">
+    <div id="postSignedOut" class="signed-out-notice" style="display:none;">
+      <strong style="display:block;font-family:'Space Grotesk',sans-serif;font-size:18px;margin-bottom:4px;">Sign in to post a signal</strong>
+      <p>Listings are tied to your account so you can edit or remove them later, and so people know who they're talking to.</p>
+      <button class="btn btn-amber" onclick="openSignupWizard()">Create an account</button>
+    </div>
+
+    <div id="postRoleGate" class="signed-out-notice" style="display:none;">
+      <strong style="display:block;font-family:'Space Grotesk',sans-serif;font-size:18px;margin-bottom:4px;">Are you a sponsee or a sponsor?</strong>
+      <p>This sets what kind of signal your account posts. It can't be switched later, so pick the one that's actually you.</p>
+      <div class="cta-row">
+        <button class="btn btn-amber" onclick="chooseAccountRole('sponsee')">I'm a sponsee / project</button>
+        <button class="btn btn-cyan" onclick="chooseAccountRole('sponsor')">I'm a sponsor</button>
+      </div>
+    </div>
+
+    <div id="postSignedIn">
+      <div class="post-head">
+        <h2 id="postTitle">Post your signal</h2>
+      </div>
+
+      <form id="postForm" onsubmit="submitListing(event)">
+        <div class="form-grid">
+          <div class="field">
+            <label for="fName" id="fNameLabel">Name</label>
+            <input type="text" id="fName" required placeholder="e.g. Circuit Foxes FTC #24601">
+          </div>
+          <div class="field">
+            <label for="fCategory">Category</label>
+            <select id="fCategory" required></select>
+          </div>
+          <div class="field full">
+            <label for="fTagline">One-line tagline</label>
+            <input type="text" id="fTagline" required maxlength="90" placeholder="e.g. Rookie robotics team headed to State, chasing our first regional win">
+          </div>
+          <div class="field full">
+            <label for="fDesc">Description</label>
+            <textarea id="fDesc" required maxlength="600" placeholder="What are you building or backing? What does a sponsorship actually fund, or what do you want in return?"></textarea>
+          </div>
+          <div class="field full" id="offerKindField" style="display:none;">
+            <label>What are you offering?</label>
+            <div class="toggle-group offer-toggle">
+              <button type="button" id="offerMoneyBtn" class="active" onclick="setOfferKind('money')">Money</button>
+              <button type="button" id="offerOtherBtn" onclick="setOfferKind('other')">Something else</button>
+              <button type="button" id="offerBothBtn" onclick="setOfferKind('both')">Both</button>
+            </div>
+          </div>
+          <div class="field" id="budgetField">
+            <label id="fBudgetLabel">Budget range (USD)</label>
+            <div class="range-row">
+              <input type="number" id="fBudgetMin" min="0" placeholder="Min" required>
+              <span>–</span>
+              <input type="number" id="fBudgetMax" min="0" placeholder="Max" required>
+            </div>
+          </div>
+          <div class="field full" id="offerDetailsField" style="display:none;">
+            <label for="fOfferDetails">Describe what you're offering</label>
+            <input type="text" id="fOfferDetails" maxlength="200" placeholder="e.g. Free gear, coaching sessions, event space, product samples">
+          </div>
+          <div class="field full" id="virtualField" style="display:none;">
+            <label class="checkbox-row">
+              <input type="checkbox" id="fVirtual">
+              <span>This sponsorship can work virtually / remotely — location doesn't matter</span>
+            </label>
+          </div>
+          <div class="field full">
+            <label for="fTagsSearch" id="fTagsLabel">Tags</label>
+            <div class="tag-picker" id="fTagsPicker">
+              <div class="tag-chips" id="fTagsChips"></div>
+              <input type="text" id="fTagsSearch" placeholder="Type to search tags…" autocomplete="off"
+                oninput="handleTagPickerInput('fTags')"
+                onfocus="handleTagPickerInput('fTags')"
+                onblur="hideTagSuggestions('fTags')">
+              <div class="autocomplete-list" id="fTagsSuggestions"></div>
+              <input type="hidden" id="fTags">
+            </div>
+          </div>
+        </div>
+
+        <div class="form-foot">
+          <p class="form-note">Signals post to a public board. Interested people reach you through Konnekt messages, not a public contact box.</p>
+          <div class="form-foot-actions">
+            <button type="button" class="link-btn" id="cancelEditBtn" onclick="cancelEditListing()" style="display:none;">Cancel edit</button>
+            <button type="submit" class="btn btn-amber" id="submitBtn">Broadcast signal</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="messages-panel" id="messagesPanel">
+    <div id="messagesSignedOut" class="signed-out-notice" style="display:none;">
+      <strong style="display:block;font-family:'Space Grotesk',sans-serif;font-size:18px;margin-bottom:4px;">Sign in to see your messages</strong>
+      <p>Message threads are tied to your account.</p>
+      <button class="btn btn-amber" onclick="openSignupWizard()">Create an account</button>
+    </div>
+
+    <div id="messagesSignedIn" class="messages-layout">
+      <div class="thread-list" id="threadList"></div>
+      <div class="thread-view" id="threadView">
+        <div class="empty-state">
+          <strong>No conversation selected</strong>
+          Pick a thread on the left, or message someone from a listing on the board.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="deals-panel" id="dealsPanel">
+    <div id="dealsSignedOut" class="signed-out-notice" style="display:none;">
+      <strong style="display:block;font-family:'Space Grotesk',sans-serif;font-size:18px;margin-bottom:4px;">Sign in to see your deals</strong>
+      <p>Deals are tied to your account.</p>
+      <button class="btn btn-amber" onclick="openSignupWizard()">Create an account</button>
+    </div>
+
+    <div id="dealsSignedIn" style="display:none;">
+      <div class="deals-tabs">
+        <button class="active" data-filter="active" onclick="setDealsFilter('active')">Needs attention</button>
+        <button data-filter="ongoing" onclick="setDealsFilter('ongoing')">Active</button>
+        <button data-filter="completed" onclick="setDealsFilter('completed')">Completed</button>
+        <button data-filter="closed" onclick="setDealsFilter('closed')">Declined / cancelled</button>
+      </div>
+      <div class="deals-list" id="dealsList"></div>
+    </div>
+  </div>
+
+  <section class="professional-sections">
+    <div class="section-title"><div><h2>Built for real partnerships</h2><span class="hint">A clear path from discovery to an ongoing sponsorship relationship.</span></div></div>
+    <div class="how-grid">
+      <article class="how-card"><span>01</span><h3>Build credibility</h3><p>Create a complete entity profile with your mission, audience, achievements, and partnership goals.</p></article>
+      <article class="how-card"><span>02</span><h3>Find alignment</h3><p>Browse focused sponsorship signals, compare fit, save opportunities, and follow organizations you care about.</p></article>
+      <article class="how-card"><span>03</span><h3>Move forward</h3><p>Connect privately, make a structured offer, coordinate deliverables, and document a completed partnership.</p></article>
+    </div>
+    <div class="trust-panel">
+      <div><span class="trust-kicker">TRUST &amp; CLARITY</span><h3>Professional tools without pretending every account is verified.</h3><p>Konnekt shows profile completeness, public activity, reviews, and completed-deal history so users can make informed decisions. Always verify identities and terms independently before committing resources.</p></div>
+      <button class="btn btn-ghost" onclick="openSignupWizard()">Create a sponsor-ready profile</button>
+    </div>
+  </section>
+
+  <footer class="site-footer">
+    <div><strong>Konnekt</strong><span>Where sponsorship signals become partnerships.</span></div>
+    <div class="footer-meta"><span>Public profiles and listings</span><span>Private messages and saved signals</span><span class="mono" id="totalCount">0 signals total</span></div>
+  </footer>
+</div>
+
+
+<!-- Notifications -->
+<div class="modal-overlay" id="notificationsOverlay" onclick="if(event.target===this)closeNotifications()">
+  <div class="modal notifications-modal">
+    <div class="modal-head">
+      <h3>Notifications</h3>
+      <div class="notification-head-actions"><button class="link-btn" onclick="markAllNotificationsRead()">Mark all read</button><button class="modal-close" onclick="closeNotifications()">✕</button></div>
+    </div>
+    <div id="notificationsList" class="notifications-list"></div>
+  </div>
+</div>
+
+<!-- Sign-in modal -->
+<div class="modal-overlay" id="authOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>Sign in</h3>
+      <button class="modal-close" onclick="closeAuthModal()">&times;</button>
+    </div>
+    <form id="authForm" onsubmit="submitAuth(event)">
+      <div class="field full">
+        <label for="authEmail">Email</label>
+        <input type="email" id="authEmail" required placeholder="you@example.com">
+      </div>
+      <div class="field full">
+        <label for="authPassword">Password</label>
+        <input type="password" id="authPassword" required minlength="6" placeholder="At least 6 characters">
+      </div>
+      <button type="submit" class="btn btn-amber btn-block" id="authSubmitBtn">Sign in</button>
+      <div class="modal-error" id="authError"></div>
+      <p class="modal-note">
+        <button type="button" class="link-btn" onclick="closeAuthModal(); openForgotPassword();">Forgot password?</button>
+      </p>
+      <p class="modal-note">New to Konnekt? <button type="button" class="link-btn" onclick="closeAuthModal(); openSignupWizard();">Create an account</button></p>
+    </form>
+  </div>
+</div>
+
+<!-- Forgot password -->
+<div class="modal-overlay" id="forgotOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>Reset your password</h3>
+      <button class="modal-close" onclick="closeForgotPassword()">&times;</button>
+    </div>
+    <form id="forgotForm" onsubmit="submitForgotPassword(event)">
+      <div class="field full">
+        <label for="forgotEmail">Email</label>
+        <input type="email" id="forgotEmail" required placeholder="you@example.com">
+      </div>
+      <button type="submit" class="btn btn-amber btn-block" id="forgotSubmitBtn">Send reset link</button>
+      <div class="modal-error" id="forgotError"></div>
+      <p class="modal-note" id="forgotNote"></p>
+    </form>
+  </div>
+</div>
+
+<!-- Set a new password (after clicking the emailed reset link) -->
+<div class="modal-overlay" id="resetPasswordOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>Set a new password</h3>
+      <button class="modal-close" onclick="closeResetPasswordModal()">&times;</button>
+    </div>
+    <form id="resetPasswordForm" onsubmit="submitNewPassword(event)">
+      <div class="field full">
+        <label for="newPassword">New password</label>
+        <input type="password" id="newPassword" required minlength="6" placeholder="At least 6 characters">
+      </div>
+      <button type="submit" class="btn btn-amber btn-block" id="resetPasswordBtn">Update password</button>
+      <div class="modal-error" id="resetPasswordError"></div>
+    </form>
+  </div>
+</div>
+
+<!-- Signup wizard -->
+<div class="modal-overlay" id="signupOverlay">
+  <div class="modal modal-wide">
+    <div class="modal-head">
+      <h3 id="wizardTitle">Join Konnekt</h3>
+      <button class="modal-close" onclick="closeSignupWizard()">&times;</button>
+    </div>
+    <div class="wizard-progress" id="wizardProgress"></div>
+    <div id="wizardBody"></div>
+    <div class="modal-error" id="wizardError"></div>
+    <div class="wizard-nav" id="wizardNav"></div>
+    <p class="modal-note wizard-skip"><button type="button" class="link-btn" onclick="closeSignupWizard()">Sign up later</button></p>
+  </div>
+</div>
+
+<!-- Profile modal -->
+<div class="modal-overlay" id="profileOverlay">
+  <div class="modal modal-wide profile-modal-shell">
+    <div class="modal-head">
+      <h3 id="profileModalTitle">Profile</h3>
+      <button class="modal-close" onclick="closeProfileModal()">&times;</button>
+    </div>
+    <div id="profileModalBody"></div>
+  </div>
+</div>
+
+<!-- Listing detail modal -->
+<div class="modal-overlay" id="listingOverlay">
+  <div class="modal modal-wide">
+    <div class="modal-head">
+      <h3>Signal details</h3>
+      <button class="modal-close" onclick="closeListingModal()">&times;</button>
+    </div>
+    <div id="listingModalBody"></div>
+  </div>
+</div>
+
+<!-- Image lightbox -->
+<div class="modal-overlay lightbox-overlay" id="imageLightboxOverlay" onclick="closeImageLightbox()">
+  <img id="lightboxImg" src="" alt="">
+</div>
+
+<!-- Propose / counter a deal -->
+<div class="modal-overlay" id="dealOverlay">
+  <div class="modal modal-wide">
+    <div class="modal-head">
+      <h3 id="dealModalTitle">Propose a deal</h3>
+      <button class="modal-close" onclick="closeDealModal()">&times;</button>
+    </div>
+    <p class="modal-note" id="dealModalSubtext" style="margin-top:0;"></p>
+    <form id="dealForm" onsubmit="submitDealProposal(event)">
+      <div class="field full" id="dealOfferKindField">
+        <label>What's on the table?</label>
+        <div class="toggle-group offer-toggle">
+          <button type="button" id="dealOfferMoneyBtn" class="active" onclick="setDealOfferKind('money')">Money</button>
+          <button type="button" id="dealOfferOtherBtn" onclick="setDealOfferKind('other')">Something else</button>
+          <button type="button" id="dealOfferBothBtn" onclick="setDealOfferKind('both')">Both</button>
+        </div>
+      </div>
+      <div class="field" id="dealAmountField">
+        <label for="dAmount">Amount (USD)</label>
+        <input type="number" id="dAmount" min="0" placeholder="e.g. 500">
+      </div>
+      <div class="field">
+        <label for="dDuration">Duration</label>
+        <input type="text" id="dDuration" placeholder="e.g. 3 months, one event">
+      </div>
+      <div class="field full" id="dealDetailsField" style="display:none;">
+        <label for="dOfferDetails">Describe what's being offered</label>
+        <input type="text" id="dOfferDetails" maxlength="200" placeholder="e.g. free gear, event space">
+      </div>
+      <div class="field full">
+        <label for="dDeliverables">Deliverables <span class="field-optional">(what the other side provides in return)</span></label>
+        <textarea id="dDeliverables" maxlength="400" placeholder="e.g. Logo on jersey + 2 social posts + banner at 3 events"></textarea>
+      </div>
+      <div class="field full">
+        <label for="dNote">Note <span class="field-optional">(optional)</span></label>
+        <input type="text" id="dNote" maxlength="300" placeholder="Anything else worth saying">
+      </div>
+      <button type="submit" class="btn btn-amber btn-block" id="dealSubmitBtn">Send proposal</button>
+      <div class="modal-error" id="dealError"></div>
+    </form>
+  </div>
+</div>
+
+<!-- Leave a review -->
+<div class="modal-overlay" id="reviewOverlay">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>Leave a review</h3>
+      <button class="modal-close" onclick="closeReviewModal()">&times;</button>
+    </div>
+    <form id="reviewForm" onsubmit="submitReview(event)">
+      <div class="field full">
+        <label>Rating</label>
+        <div class="star-input" id="starInput">
+          <button type="button" data-star="1" onclick="setReviewRating(1)">★</button>
+          <button type="button" data-star="2" onclick="setReviewRating(2)">★</button>
+          <button type="button" data-star="3" onclick="setReviewRating(3)">★</button>
+          <button type="button" data-star="4" onclick="setReviewRating(4)">★</button>
+          <button type="button" data-star="5" onclick="setReviewRating(5)">★</button>
+        </div>
+      </div>
+      <div class="field full">
+        <label for="rBody">Review <span class="field-optional">(optional)</span></label>
+        <textarea id="rBody" maxlength="500" placeholder="How did it go?"></textarea>
+      </div>
+      <button type="submit" class="btn btn-amber btn-block">Submit review</button>
+      <div class="modal-error" id="reviewError"></div>
+    </form>
+  </div>
+</div>
+
+<button class="back-to-top" id="backToTop" onclick="window.scrollTo({top:0,behavior:'smooth'})" aria-label="Back to top">↑</button>
+
+<div class="toast" id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+
+</body>
+</html>
