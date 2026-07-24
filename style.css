@@ -609,8 +609,14 @@ select:focus, input:focus, textarea:focus {
 }
 
 .badge.sponsor {
-    background: var(--cyan-soft);
-    color: var(--cyan);
+    background: var(--cyan);
+    color: rgb(255,255,255);
+    font-weight: 550;
+    position: absolute;
+    position-anchor: --username;
+    left: anchor(right);
+    margin-left: 10px;
+    anchor-name: --team;
 }
 
 .tagline {
@@ -1093,7 +1099,7 @@ select:focus, input:focus, textarea:focus {
 .badge.verified {
     background: var(--cyan);
     color: rgb(255,255,255);
-    font-weight: 1000;
+    font-weight: 800;
     position: absolute;
     position-anchor: --team;
     left: anchor(right);
