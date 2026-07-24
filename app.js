@@ -1522,12 +1522,12 @@ function openListingFromProfile(id){
 }
 
 function roleBadgeHtml(role){
-  if(role === 'sponsor') return `<span class="badge sponsor">SPONSOR</span>`;
-  if(role === 'sponsee') return `<span class="badge team">SPONSEE</span>`;
+  if(role === 'sponsor') return `<span class="badge sponsor">Sponsor</span>`;
+  if(role === 'sponsee') return `<span class="badge team">Sponsee</span>`;
   return '';
 }
 function verifiedBadgeHtml(verified){
-  return verified ? `<span class="badge verified">✓ Verified</span>` : '';
+  return verified ? `<span class="badge verified">✓</span>` : '';
 }
 function starDisplay(rating){
   const r = Math.round(rating);
